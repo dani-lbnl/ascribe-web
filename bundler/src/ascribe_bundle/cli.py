@@ -43,11 +43,17 @@ def build(args) -> int:
         md = Path(args.story).read_text(encoding="utf-8")
         pages, images = parse_story(md)
         for img in images:
-            src_img = Path(args.story).parent / img
+            img_path = Path(img)
+            if img_path.is_absolute() or ".." in img_path.parts:
+                print(f"error: story image path escapes bundle: {img}", file=sys.stderr)
+                return 1
+            src_img = Path(args.story).parent / img_path
             if not src_img.exists():
                 print(f"error: story references missing image {img}", file=sys.stderr)
                 return 1
-            shutil.copy(src_img, out / Path(img).name)
+            dest_img = out / img_path
+            dest_img.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(src_img, dest_img)
 
     specimen = {"id": "specimen_0", "type": spec_type, "data": data_name,
                 "display": {"gamma": 1.0, "opacity": 1.0, "gradient": DEFAULT_GRADIENT}}
@@ -58,7 +64,7 @@ def build(args) -> int:
     validate_manifest(manifest)
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
-    total_mb = sum(f.stat().st_size for f in out.iterdir()) / 1e6
+    total_mb = sum(f.stat().st_size for f in out.rglob("*") if f.is_file()) / 1e6
     if total_mb > args.size_warn_mb:
         print(f"warning: bundle is {total_mb:.0f} MB, exceeds {args.size_warn_mb} MB "
               f"(consider --max-dim or --dtype u8)", file=sys.stderr)
