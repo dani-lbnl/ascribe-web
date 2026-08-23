@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ascribe-bundle"
+dynamic = ["version"]
+description = "Bake static web bundles for the ascribe-web viewer"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26", "tifffile>=2024.0", "jsonschema>=4.21"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+ascribe-bundle = "ascribe_bundle.cli:main"
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { root = ".." }
