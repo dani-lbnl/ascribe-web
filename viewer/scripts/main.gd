@@ -29,6 +29,35 @@ func _ready() -> void:
 	$CanvasLayer/ProgressBar.value = 0.0
 	_loader.load_bundle(_resolve_bundle_url())
 
+	_wire_xr_grab()
+	_wire_display_panels()
+
+
+## Wires the grab controller node to the two hand controllers and the staged specimen. Left as a
+## separate step (rather than tscn export properties) so it stays simple to keep in sync with the
+## scene tree above.
+func _wire_xr_grab() -> void:
+	var grab: XRGrab = $XRGrab
+	grab.left_controller = $XROrigin3D/LeftController
+	grab.right_controller = $XROrigin3D/RightController
+	grab.specimen_stage = $SpecimenStage
+
+	var pointer := $XROrigin3D/XRPanelPointer
+	pointer.right_controller = $XROrigin3D/RightController
+	pointer.left_controller = $XROrigin3D/LeftController
+	pointer.panel_quad = $XROrigin3D/PanelQuad
+	pointer.panel_viewport = $XROrigin3D/PanelViewport
+	pointer.laser_dot = $XROrigin3D/LaserDot
+
+
+## Connects both the desktop and in-VR display settings panels to the staged specimen. They are
+## separate instances of the same `display_settings_panel.tscn` scene (one drawn to the desktop
+## CanvasLayer, one rendered into the SubViewport behind the in-VR quad) so each can be adjusted
+## independently without either mode fighting the other.
+func _wire_display_panels() -> void:
+	$CanvasLayer/DisplaySettingsPanel.display_changed.connect($SpecimenStage.apply_display)
+	$XROrigin3D/PanelViewport/DisplaySettingsPanel.display_changed.connect($SpecimenStage.apply_display)
+
 
 ## Resolves the bundle base URL: `?bundle=` query param on web, falling back to the fixture
 ## bundle when not running on web or the param is missing.
