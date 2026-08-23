@@ -98,3 +98,10 @@ Viewer (gdUnit4, headless):
 ```powershell
 & "<path to Godot_v4.6-stable_win64_console.exe>" --headless --path viewer -s res://addons/gdUnit4/bin/GdUnitCmdTool.gd -a res://tests --ignoreHeadlessMode
 ```
+
+## Roadmap / limitations
+
+- **Building directly from a running ascribe-link server is not yet implemented.** The bundler CLI
+  (`ascribe-bundle build`) only accepts local files -- a `.npy`/`.tif`/`.tiff` volume array, or a
+  pre-baked `.bin` envelope. There is no "point the CLI at a specimen ID on a live server" workflow
+  yet; that would require an ascribe-link client and is left for a future iteration.
