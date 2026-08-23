@@ -1,0 +1,65 @@
+[gd_scene load_steps=6 format=3 uid="uid://cvw8p1qskeleton"]
+
+[ext_resource type="Script" path="res://scripts/skeleton.gd" id="1_skel"]
+[ext_resource type="Shader" path="res://shaders/volume_web.gdshader" id="2_shdr"]
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 1
+background_color = Color(0.02, 0.02, 0.03, 1)
+ambient_light_source = 2
+ambient_light_color = Color(1, 1, 1, 1)
+ambient_light_energy = 0.3
+
+[sub_resource type="BoxMesh" id="BoxMesh_1"]
+size = Vector3(1, 1, 1)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_1"]
+shader = ExtResource("2_shdr")
+shader_parameter/zoom = 2.0
+shader_parameter/opacity = 1.0
+shader_parameter/gamma = 1.0
+shader_parameter/color_scalar = 1.0
+shader_parameter/max_steps = 128
+shader_parameter/step_size = 0.01
+shader_parameter/num_exclusion_planes = 0
+shader_parameter/exclusion_planes = PackedVector4Array()
+
+[node name="Skeleton" type="Node3D"]
+script = ExtResource("1_skel")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_1")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1.5)
+current = true
+
+[node name="XROrigin3D" type="XROrigin3D" parent="."]
+
+[node name="XRCamera3D" type="XRCamera3D" parent="XROrigin3D"]
+
+[node name="LeftController" type="XRController3D" parent="XROrigin3D"]
+tracker = "left_hand"
+
+[node name="RightController" type="XRController3D" parent="XROrigin3D"]
+tracker = "right_hand"
+
+[node name="Volume" type="MeshInstance3D" parent="."]
+mesh = SubResource("BoxMesh_1")
+surface_material_override/0 = SubResource("ShaderMaterial_1")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="EnterVR" type="Button" parent="CanvasLayer"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -60.0
+offset_top = -80.0
+offset_right = 60.0
+offset_bottom = -40.0
+grow_horizontal = 2
+grow_vertical = 0
+text = "Enter VR"
