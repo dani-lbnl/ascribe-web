@@ -1,8 +1,9 @@
-[gd_scene load_steps=6 format=3 uid="uid://cvw8p1qskeleton"]
+[gd_scene load_steps=7 format=3 uid="uid://cvw8p1qskeleton"]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://scenes/specimen_stage.tscn" id="2_stage"]
 [ext_resource type="PackedScene" path="res://scenes/error_screen.tscn" id="3_err"]
+[ext_resource type="Script" path="res://scripts/orbit_camera.gd" id="4_orbit"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -20,6 +21,8 @@ environment = SubResource("Environment_1")
 [node name="Camera3D" type="Camera3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1.5)
 current = true
+script = ExtResource("4_orbit")
+distance = 1.5
 
 [node name="XROrigin3D" type="XROrigin3D" parent="."]
 
