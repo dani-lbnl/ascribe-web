@@ -1,4 +1,4 @@
-[gd_scene load_steps=13 format=3 uid="uid://cvw8p1qskeleton"]
+[gd_scene load_steps=16 format=3 uid="uid://cvw8p1qskeleton"]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://scenes/specimen_stage.tscn" id="2_stage"]
@@ -7,6 +7,7 @@
 [ext_resource type="Script" path="res://scripts/xr_grab.gd" id="5_grab"]
 [ext_resource type="Script" path="res://scripts/xr_panel_pointer.gd" id="6_pointer"]
 [ext_resource type="PackedScene" path="res://scenes/display_settings_panel.tscn" id="7_panel"]
+[ext_resource type="PackedScene" path="res://scenes/story_panel.tscn" id="8_story"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -30,6 +31,20 @@ shading_mode = 0
 albedo_texture = SubResource("ViewportTexture_panel")
 
 [sub_resource type="StandardMaterial3D" id="StandardMaterial3D_dot"]
+shading_mode = 0
+albedo_color = Color(1, 0.2, 0.2, 1)
+
+[sub_resource type="QuadMesh" id="QuadMesh_story"]
+size = Vector2(0.4, 0.35)
+
+[sub_resource type="ViewportTexture" id="ViewportTexture_story"]
+viewport_path = NodePath("XROrigin3D/StoryViewport")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_story"]
+shading_mode = 0
+albedo_texture = SubResource("ViewportTexture_story")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_story_dot"]
 shading_mode = 0
 albedo_color = Color(1, 0.2, 0.2, 1)
 
@@ -74,6 +89,25 @@ surface_material_override/0 = SubResource("StandardMaterial3D_dot")
 [node name="XRPanelPointer" type="Node3D" parent="XROrigin3D"]
 script = ExtResource("6_pointer")
 
+[node name="StoryViewport" type="SubViewport" parent="XROrigin3D"]
+size = Vector2i(480, 420)
+render_target_update_mode = 4
+
+[node name="StoryPanel" parent="XROrigin3D/StoryViewport" instance=ExtResource("8_story")]
+
+[node name="StoryQuad" type="MeshInstance3D" parent="XROrigin3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.5, 1.6, -0.5)
+mesh = SubResource("QuadMesh_story")
+surface_material_override/0 = SubResource("StandardMaterial3D_story")
+
+[node name="StoryLaserDot" type="MeshInstance3D" parent="XROrigin3D"]
+visible = false
+mesh = SubResource("SphereMesh_dot")
+surface_material_override/0 = SubResource("StandardMaterial3D_story_dot")
+
+[node name="StoryPanelPointer" type="Node3D" parent="XROrigin3D"]
+script = ExtResource("6_pointer")
+
 [node name="XRGrab" type="Node" parent="."]
 script = ExtResource("5_grab")
 
@@ -116,8 +150,21 @@ text = "Enter VR"
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -260.0
+offset_left = -580.0
 offset_top = 20.0
-offset_right = -20.0
+offset_right = -340.0
 offset_bottom = 160.0
 grow_horizontal = 0
+
+[node name="StoryPanel" parent="CanvasLayer" instance=ExtResource("8_story")]
+anchors_preset = 9
+anchor_top = 0.0
+anchor_bottom = 1.0
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -320.0
+offset_top = 0.0
+offset_right = 0.0
+offset_bottom = 0.0
+grow_horizontal = 0
+grow_vertical = 2

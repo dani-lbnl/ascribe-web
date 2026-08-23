@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "title": "Gyroid Sphere",
+  "specimens": [
+    {
+      "id": "specimen_0",
+      "type": "volume",
+      "data": "specimen_0.bin",
+      "display": {
+        "gamma": 1.0,
+        "opacity": 1.0,
+        "gradient": [
+          [
+            0.0,
+            "#00000000"
+          ],
+          [
+            1.0,
+            "#ffe6b3ff"
+          ]
+        ]
+      }
+    }
+  ],
+  "story": [
+    {
+      "text": "# The Gyroid Sphere\n\nThis is a **procedurally generated** demo specimen: a soft sphere modulated by a *gyroid* minimal\nsurface, baked into a 64x64x64 volume by `gen_demo_volume.py`.\n\nIt exists to give the ascribe-web viewer something visually interesting to load without needing\nreal scientific data on hand.",
+      "specimen": "specimen_0"
+    },
+    {
+      "text": "## Gyroids\n\nA gyroid is an infinitely connected, triply periodic minimal surface. Here it's approximated with\na simple trig formula, then multiplied against a spherical falloff so only the central region\nsurvives.\n\n*Rotate the specimen* with the mouse (desktop) or grab it with a controller (WebXR) to see the\ninternal structure.",
+      "specimen": "specimen_0"
+    },
+    {
+      "text": "## Try the controls\n\nUse the display settings panel to adjust **gamma**, **opacity**, and render quality. In WebXR,\npoint the controller trigger at the panel to click, and the left controller's B/Y button toggles\nit.\n\nThis page re-pins `specimen_0` explicitly, exercising the story panel's specimen-pin wiring even\nthough it's the only specimen in this demo bundle.",
+      "specimen": "specimen_0"
+    }
+  ]
+}
