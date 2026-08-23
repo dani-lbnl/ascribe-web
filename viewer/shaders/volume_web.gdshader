@@ -16,6 +16,11 @@ uniform float gamma = 1;
 uniform float color_scalar = 1;
 uniform int max_steps = 128;
 uniform float step_size = 0.01;
+// Half-extents (in local/object space) of the box the volume is staged in. Defaults to 0.5,
+// matching the original unit-cube assumption -- SpecimenStage overrides this per-specimen for
+// anisotropic (non-cubic) volumes so the texture fills the box exactly on every axis instead of
+// getting stretched/squashed.
+uniform vec3 box_extents = vec3(0.5, 0.5, 0.5);
 uniform int num_exclusion_planes = 0;
 uniform vec4[MAX_EXCLUSION_PLANES] exclusion_planes;
 
@@ -55,8 +60,9 @@ vec4 raymarch(vec3 ray_origin, vec3 ray_dir) {
         // Step along the ray
         ray_origin += ray_dir * step_size;
 
-        // Sample the texture volume
-        vec3 tex_sample_pt = ((ray_origin * zoom) / 2.0) + vec3(0.5, 0.5, 0.5);
+        // Sample the texture volume. Each axis is normalized by its own half-extent so the
+        // volume fills the (possibly non-cubic) box exactly, instead of assuming a unit cube.
+        vec3 tex_sample_pt = ((ray_origin / (2.0 * box_extents)) * zoom) + vec3(0.5, 0.5, 0.5);
 
         // Skip invalid samples
         if (any(lessThan(tex_sample_pt, vec3(0.0))) || any(greaterThan(tex_sample_pt, vec3(1.0))))
@@ -88,12 +94,12 @@ void fragment() {
     vec3 ro = world_camera;
     vec3 rd = normalize(world_position - ro);
 
-    // Assuming your cube is centered at (0, 0, 0) and has size 1 (you can adjust this to your volume's size).
-    vec3 half_extents = vec3(0.5, 0.5, 0.5); // Adjust this to match the cube's half-extents
+    // The box is centered at (0, 0, 0) with half-extents `box_extents` (0.5 = a unit cube; set
+    // per-specimen by SpecimenStage to match the staged BoxMesh's actual size).
 
-    // Ray-box intersection logic to clamp ray origin to the surface of the cube
-    vec3 t_min = ( -half_extents - ro ) / rd; // Compute entry point of the ray
-    vec3 t_max = ( half_extents - ro ) / rd;  // Compute exit point of the ray
+    // Ray-box intersection logic to clamp ray origin to the surface of the box
+    vec3 t_min = ( -box_extents - ro ) / rd; // Compute entry point of the ray
+    vec3 t_max = ( box_extents - ro ) / rd;  // Compute exit point of the ray
 
     // Ensure t_min is less than t_max
     vec3 t_near = min(t_min, t_max);

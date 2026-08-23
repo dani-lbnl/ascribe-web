@@ -52,11 +52,15 @@ func _current_mesh_instance() -> MeshInstance3D:
 
 func _stage_volume(vol: WebVolumetricData, display: Dictionary) -> void:
 	var box := BoxMesh.new()
-	box.size = _normalized_box_size(vol.get_dimensions(), vol.get_spacing())
+	var box_size := _normalized_box_size(vol.get_dimensions(), vol.get_spacing())
+	box.size = box_size
 
 	var mat := ShaderMaterial.new()
 	mat.shader = VOLUME_SHADER
 	mat.set_shader_parameter("texture_volume", vol.get_texture())
+	# Half-extents of the staged box; keeps the raymarch's ray-box intersection and texture
+	# coordinate normalization matched to the actual (possibly non-cubic) box, not a unit cube.
+	mat.set_shader_parameter("box_extents", box_size / 2.0)
 	_apply_display_to_material(mat, display)
 
 	var mesh_instance := MeshInstance3D.new()

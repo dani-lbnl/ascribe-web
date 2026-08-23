@@ -56,6 +56,25 @@ func test_stage_second_specimen_replaces_first() -> void:
 	assert_that(is_instance_valid(first_child) and first_child.is_inside_tree()).is_false()
 
 
+func test_stage_volume_sets_box_extents_from_staged_box() -> void:
+	var stage: SpecimenStage = auto_free(SpecimenStage.new())
+	add_child(stage)
+
+	var vol := _load_fixture_volume()
+	stage.stage("specimen_0", vol, {})
+
+	var mesh_child: MeshInstance3D = null
+	for child in stage.get_children():
+		if child is MeshInstance3D:
+			mesh_child = child
+	assert_that(mesh_child).is_not_null()
+
+	var box: BoxMesh = mesh_child.mesh
+	var mat: ShaderMaterial = mesh_child.get_surface_override_material(0)
+	var box_extents: Vector3 = mat.get_shader_parameter("box_extents")
+	assert_that(box_extents).is_equal(box.size / 2.0)
+
+
 func test_gradient_from_stops() -> void:
 	var stage: SpecimenStage = auto_free(SpecimenStage.new())
 	add_child(stage)
