@@ -6,6 +6,9 @@
 ##   with a locally declared `data_ready` signal instead.
 ## - Removed set_from_dict, set_from_images, and set_texture (web viewer only uses set_from_bytes).
 ## - _create_image_from_bytes supports only uint8/float16 (web-safe dtypes); float32 is rejected.
+## - Added build_async (Task 7): identical to set_from_bytes but builds slice images in batches of
+##   8, awaiting a scene-tree process frame between batches, so BundleLoader can decode large
+##   volumes without stalling the main thread. set_from_bytes is kept as-is for synchronous tests.
 class_name WebVolumetricData
 extends RefCounted
 
@@ -126,6 +129,68 @@ func set_from_bytes(preamble: Dictionary, body: PackedByteArray, offset: int) ->
 			push_error("WebVolumetricData.set_from_bytes: failed to create image for slice %d" % z)
 			return false
 		images.append(img)
+
+	var tex := ImageTexture3D.new()
+	tex.create(images[0].get_format(), width, height, depth, false, images)
+	_texture = tex
+	data_ready.emit()
+	return true
+
+
+## Async variant of set_from_bytes for use by BundleLoader.
+##
+## Identical validation and decoding to set_from_bytes, but builds slice images in batches of 8,
+## awaiting `tree.process_frame` between batches so a large volume (e.g. 512 slices) does not
+## stall the main thread during decode.
+##
+## Returns true on success, false on error (malformed preamble, body-too-short, bad dtype).
+func build_async(preamble: Dictionary, body: PackedByteArray, offset: int, tree: SceneTree) -> bool:
+	if preamble.get("type", "") != "volume":
+		push_error("WebVolumetricData.build_async: preamble.type is not 'volume'")
+		return false
+
+	var shape = preamble.get("shape", [])
+	if shape.size() != 3:
+		push_error("WebVolumetricData.build_async: shape must have 3 elements")
+		return false
+	var depth: int = int(shape[0])
+	var height: int = int(shape[1])
+	var width: int = int(shape[2])
+	_dimensions = Vector3i(width, height, depth)
+
+	var dtype: String = preamble.get("dtype", "float32")
+	var bytes_per_voxel := _get_bytes_per_voxel(dtype)
+	var slice_bytes := width * height * bytes_per_voxel
+	var total_bytes := depth * slice_bytes
+
+	if body.size() < offset + total_bytes:
+		push_error("WebVolumetricData.build_async: body too short (need %d, got %d)" % [offset + total_bytes, body.size()])
+		return false
+
+	var spacing_arr = preamble.get("spacing", [1.0, 1.0, 1.0])
+	var origin_arr = preamble.get("origin", [0.0, 0.0, 0.0])
+	if spacing_arr == null:
+		spacing_arr = [1.0, 1.0, 1.0]
+	if origin_arr == null:
+		origin_arr = [0.0, 0.0, 0.0]
+	if spacing_arr.size() >= 3:
+		# Preamble order is [sz, sy, sx]; Godot Vector3 is [x, y, z].
+		_spacing = Vector3(spacing_arr[2], spacing_arr[1], spacing_arr[0])
+	if origin_arr.size() >= 3:
+		_origin = Vector3(origin_arr[2], origin_arr[1], origin_arr[0])
+
+	var images: Array[Image] = []
+	for z in range(depth):
+		var start := offset + z * slice_bytes
+		var end := start + slice_bytes
+		var slice_buf := body.slice(start, end)
+		var img := _create_image_from_bytes(slice_buf, width, height, dtype)
+		if img == null:
+			push_error("WebVolumetricData.build_async: failed to create image for slice %d" % z)
+			return false
+		images.append(img)
+		if (z + 1) % 8 == 0 and tree != null:
+			await tree.process_frame
 
 	var tex := ImageTexture3D.new()
 	tex.create(images[0].get_format(), width, height, depth, false, images)
