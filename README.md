@@ -12,7 +12,7 @@ interaction modes.
 
 ```powershell
 cd bundler
-py -3.13 -m venv  # or any Python >=3.11 ..\.venv
+py -3.13 -m venv ..\.venv   # any Python >=3.11 works
 ..\.venv\Scripts\activate
 pip install -e .
 ```
