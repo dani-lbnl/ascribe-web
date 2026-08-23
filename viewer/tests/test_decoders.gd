@@ -34,3 +34,45 @@ func test_volume_rejects_float32() -> void:
 	var body := PackedByteArray([0, 0, 0, 0])
 	var vol := WebVolumetricData.new()
 	assert_that(vol.set_from_bytes(pre, body, 0)).is_false()
+
+
+## Builds a minimal mesh envelope (a single triangle) in-test: u32 LE preamble length, the JSON
+## preamble, then 3 float32 vertices, 3 uint32 indices, and 3 float32 normals.
+func _build_triangle_envelope() -> PackedByteArray:
+	var preamble := JSON.stringify({
+		"type": "mesh",
+		"vertex_count": 3,
+		"index_count": 3,
+		"normal_count": 3,
+	})
+	var preamble_bytes := preamble.to_utf8_buffer()
+
+	var buffer := StreamPeerBuffer.new()
+	buffer.put_u32(preamble_bytes.size())
+	buffer.put_data(preamble_bytes)
+
+	var vertices := PackedFloat32Array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
+	buffer.put_data(vertices.to_byte_array())
+
+	var indices := PackedInt32Array([0, 1, 2])
+	for i in indices:
+		buffer.put_u32(i)
+
+	var normals := PackedFloat32Array([0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0])
+	buffer.put_data(normals.to_byte_array())
+
+	return buffer.data_array
+
+
+func test_mesh_set_from_bytes_builds_arraymesh() -> void:
+	var body := _build_triangle_envelope()
+	var parsed := BinaryEnvelope.parse(body)
+	assert_that(parsed.has("error")).is_false()
+	assert_that(parsed["preamble"]["type"]).is_equal("mesh")
+
+	var mesh_data := WebMeshData.new()
+	assert_that(mesh_data.set_from_bytes(parsed["preamble"], body, parsed["offset"])).is_true()
+
+	var mesh := mesh_data.get_mesh()
+	assert_that(mesh).is_not_null()
+	assert_that(mesh.get_surface_count()).is_equal(1)

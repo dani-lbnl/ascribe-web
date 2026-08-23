@@ -1,0 +1,128 @@
+## Stages one specimen (volume or mesh) in the 3D scene, replacing any previously staged
+## specimen. Volumes are shown as a unit BoxMesh with the raymarch shader material; meshes are
+## shown as a MeshInstance3D normalized to fit a 1m cube.
+class_name SpecimenStage
+extends Node3D
+
+const VOLUME_SHADER := preload("res://shaders/volume_web.gdshader")
+
+var current_id: String = ""
+
+
+## Stages `data` (a WebVolumetricData or WebMeshData) under `id`, applying `display` settings.
+## Removes any previously staged specimen first.
+func stage(id: String, data: RefCounted, display: Dictionary) -> void:
+	clear()
+	current_id = id
+
+	if data is WebVolumetricData:
+		_stage_volume(data as WebVolumetricData, display)
+	elif data is WebMeshData:
+		_stage_mesh(data as WebMeshData, display)
+	else:
+		push_error("SpecimenStage.stage: unsupported data type for '%s'" % [id])
+
+
+## Removes the currently staged specimen, if any.
+func clear() -> void:
+	for child in get_children():
+		remove_child(child)
+		child.queue_free()
+	current_id = ""
+
+
+## Applies display settings (gamma/opacity/gradient/max_steps/step_size) to the currently staged
+## volume's shader material. No-op if nothing is staged, or the staged specimen is a mesh.
+func apply_display(display: Dictionary) -> void:
+	var mesh_instance := _current_mesh_instance()
+	if mesh_instance == null:
+		return
+	var mat: ShaderMaterial = mesh_instance.get_surface_override_material(0)
+	if mat == null or mat.shader != VOLUME_SHADER:
+		return
+	_apply_display_to_material(mat, display)
+
+
+func _current_mesh_instance() -> MeshInstance3D:
+	for child in get_children():
+		if child is MeshInstance3D:
+			return child
+	return null
+
+
+func _stage_volume(vol: WebVolumetricData, display: Dictionary) -> void:
+	var box := BoxMesh.new()
+	box.size = _normalized_box_size(vol.get_dimensions(), vol.get_spacing())
+
+	var mat := ShaderMaterial.new()
+	mat.shader = VOLUME_SHADER
+	mat.set_shader_parameter("texture_volume", vol.get_texture())
+	_apply_display_to_material(mat, display)
+
+	var mesh_instance := MeshInstance3D.new()
+	mesh_instance.mesh = box
+	mesh_instance.set_surface_override_material(0, mat)
+	add_child(mesh_instance)
+
+
+func _stage_mesh(mesh_data: WebMeshData, _display: Dictionary) -> void:
+	var mesh := mesh_data.get_mesh()
+	var mesh_instance := MeshInstance3D.new()
+	mesh_instance.mesh = mesh
+	add_child(mesh_instance)
+
+	if mesh != null:
+		var aabb := mesh.get_aabb()
+		var largest := maxf(maxf(aabb.size.x, aabb.size.y), aabb.size.z)
+		if largest > 0.0:
+			var scale := 1.0 / largest
+			mesh_instance.scale = Vector3(scale, scale, scale)
+			mesh_instance.position = -aabb.get_center() * scale
+
+
+## Computes a BoxMesh size (in meters) for a volume whose physical extent is
+## `dimensions * spacing`, normalized so the largest axis is 1m.
+func _normalized_box_size(dimensions: Vector3i, spacing: Vector3) -> Vector3:
+	var extent := Vector3(dimensions) * spacing
+	var largest := maxf(maxf(extent.x, extent.y), extent.z)
+	if largest <= 0.0:
+		return Vector3.ONE
+	return extent / largest
+
+
+func _apply_display_to_material(mat: ShaderMaterial, display: Dictionary) -> void:
+	if display.has("gamma"):
+		mat.set_shader_parameter("gamma", float(display["gamma"]))
+	if display.has("opacity"):
+		mat.set_shader_parameter("opacity", float(display["opacity"]))
+	if display.has("gradient"):
+		mat.set_shader_parameter("gradient", _gradient_from_stops(display["gradient"]))
+	if display.has("max_steps"):
+		mat.set_shader_parameter("max_steps", int(display["max_steps"]))
+	if display.has("step_size"):
+		mat.set_shader_parameter("step_size", float(display["step_size"]))
+
+
+## Builds a GradientTexture1D from a list of `[offset: float, hex_color: String]` stops (the
+## manifest's `display.gradient` shape). Invalid hex colors fall back to magenta so a bad
+## manifest is visibly wrong rather than silently transparent.
+func _gradient_from_stops(stops: Array) -> GradientTexture1D:
+	var gradient := Gradient.new()
+	var points := PackedFloat32Array()
+	var colors: Array[Color] = []
+	for stop in stops:
+		var offset: float = float(stop[0])
+		var color := Color.from_string(str(stop[1]), Color.MAGENTA)
+		points.append(offset)
+		colors.append(color)
+
+	if points.size() >= 2:
+		gradient.offsets = points
+		gradient.colors = colors
+	elif points.size() == 1:
+		gradient.offsets = PackedFloat32Array([0.0, 1.0])
+		gradient.colors = [colors[0], colors[0]]
+
+	var tex := GradientTexture1D.new()
+	tex.gradient = gradient
+	return tex
