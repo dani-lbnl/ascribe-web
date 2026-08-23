@@ -32,14 +32,15 @@ func _emit_changed() -> void:
 
 
 ## Returns the current slider state as a display dictionary. `step_size` is derived from the
-## quality slider so higher quality (more steps) uses a proportionally smaller step.
+## quality slider via `Quality.step_size_for`, the same lookup `Quality.pick_tier` uses, so the
+## manual slider and the automatic desktop/mobile/XR tiers never disagree at the same step count.
 func get_display() -> Dictionary:
 	var steps: int = int($Quality.value)
 	return {
 		"gamma": $Gamma.value,
 		"opacity": $Opacity.value,
 		"max_steps": steps,
-		"step_size": 2.0 / float(steps),
+		"step_size": Quality.step_size_for(steps),
 	}
 
 
