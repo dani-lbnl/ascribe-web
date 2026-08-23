@@ -129,8 +129,23 @@ func _resolve_bundle_url() -> String:
 			for pair in params:
 				var kv := pair.split("=", true, 1)
 				if kv.size() == 2 and kv[0] == "bundle" and kv[1] != "":
-					return kv[1]
+					return _resolve_web_bundle_value(kv[1])
 	return DEFAULT_BUNDLE
+
+
+## Resolves a raw `?bundle=` value on web. `res://` and absolute http(s) URLs pass through
+## unchanged; anything else is percent-decoded and resolved against the page's own location (via
+## `new URL(raw, location.href)`) so HTTPRequest.request() always gets an absolute URL -- it can't
+## handle relative ones itself.
+func _resolve_web_bundle_value(raw: String) -> String:
+	if raw.begins_with("res://") or raw.begins_with("http://") or raw.begins_with("https://"):
+		return raw
+	var decoded: String = raw.uri_decode()
+	var js := "new URL(%s, location.href).href" % [JSON.stringify(decoded)]
+	var resolved = JavaScriptBridge.eval(js, true)
+	if resolved is String and resolved != "":
+		return resolved
+	return decoded
 
 
 func _on_progress(_stage: String, ratio: float) -> void:
