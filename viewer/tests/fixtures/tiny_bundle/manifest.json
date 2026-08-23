@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "title": "Tiny",
+  "specimens": [
+    {
+      "id": "specimen_0",
+      "type": "volume",
+      "data": "specimen_0.bin",
+      "display": {
+        "gamma": 1.0,
+        "opacity": 1.0,
+        "gradient": [
+          [
+            0.0,
+            "#00000000"
+          ],
+          [
+            1.0,
+            "#ffe6b3ff"
+          ]
+        ]
+      }
+    }
+  ],
+  "story": [
+    {
+      "text": "A tiny test sphere.",
+      "specimen": "specimen_0"
+    },
+    {
+      "text": "Second page.",
+      "specimen": "specimen_0"
+    }
+  ]
+}

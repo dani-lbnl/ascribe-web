@@ -1,0 +1,134 @@
+## Volumetric data container.
+## Stores a 3D texture for volume rendering.
+## Vendored from vr-start scripts/DataClasses/volumetric_data.gd (tag 1.1.0); local changes noted below.
+## Local changes:
+## - Renamed VolumetricData -> WebVolumetricData; extends RefCounted (Data base class not vendored)
+##   with a locally declared `data_ready` signal instead.
+## - Removed set_from_dict, set_from_images, and set_texture (web viewer only uses set_from_bytes).
+## - _create_image_from_bytes supports only uint8/float16 (web-safe dtypes); float32 is rejected.
+class_name WebVolumetricData
+extends RefCounted
+
+signal data_ready
+
+var _texture: Texture3D
+var _dimensions: Vector3i
+var _spacing: Vector3 = Vector3.ONE
+var _origin: Vector3 = Vector3.ZERO
+
+
+func is_valid() -> bool:
+	return _texture != null
+
+
+func get_data() -> Texture3D:
+	return _texture
+
+
+func get_texture() -> Texture3D:
+	return _texture
+
+
+func get_dimensions() -> Vector3i:
+	return _dimensions
+
+
+func get_spacing() -> Vector3:
+	return _spacing
+
+
+func get_origin() -> Vector3:
+	return _origin
+
+
+func _get_bytes_per_voxel(dtype: String) -> int:
+	match dtype:
+		"uint8", "int8":
+			return 1
+		"uint16", "int16", "float16":
+			return 2
+		"uint32", "int32", "float32":
+			return 4
+		"uint64", "int64", "float64":
+			return 8
+		_:
+			push_warning("WebVolumetricData: unknown dtype '%s', assuming 4 bytes" % dtype)
+			return 4
+
+
+func _create_image_from_bytes(raw: PackedByteArray, width: int, height: int, dtype: String) -> Image:
+	match dtype:
+		"uint8":
+			return Image.create_from_data(width, height, false, Image.FORMAT_L8, raw)
+		"float16":
+			return Image.create_from_data(width, height, false, Image.FORMAT_RH, raw)
+		_:
+			push_error("WebVolumetricData: dtype '%s' is not web-safe (float16/uint8 only)" % dtype)
+			return null
+
+
+func clear() -> void:
+	_texture = null
+	_dimensions = Vector3i.ZERO
+	_spacing = Vector3.ONE
+	_origin = Vector3.ZERO
+
+
+## Set data from the binary envelope body.
+##
+## `preamble` is the dict returned by `BinaryEnvelope.parse`.
+## `body` is the full response body (including the 4-byte length prefix and JSON preamble).
+## `offset` is the byte position where the volume bytes start (`preamble.offset` from the parser).
+##
+## Returns true on success, false on error (malformed preamble, body-too-short, bad dtype).
+func set_from_bytes(preamble: Dictionary, body: PackedByteArray, offset: int) -> bool:
+	if preamble.get("type", "") != "volume":
+		push_error("WebVolumetricData.set_from_bytes: preamble.type is not 'volume'")
+		return false
+
+	var shape = preamble.get("shape", [])
+	if shape.size() != 3:
+		push_error("WebVolumetricData.set_from_bytes: shape must have 3 elements")
+		return false
+	var depth: int = int(shape[0])
+	var height: int = int(shape[1])
+	var width: int = int(shape[2])
+	_dimensions = Vector3i(width, height, depth)
+
+	var dtype: String = preamble.get("dtype", "float32")
+	var bytes_per_voxel := _get_bytes_per_voxel(dtype)
+	var slice_bytes := width * height * bytes_per_voxel
+	var total_bytes := depth * slice_bytes
+
+	if body.size() < offset + total_bytes:
+		push_error("WebVolumetricData.set_from_bytes: body too short (need %d, got %d)" % [offset + total_bytes, body.size()])
+		return false
+
+	var spacing_arr = preamble.get("spacing", [1.0, 1.0, 1.0])
+	var origin_arr = preamble.get("origin", [0.0, 0.0, 0.0])
+	if spacing_arr == null:
+		spacing_arr = [1.0, 1.0, 1.0]
+	if origin_arr == null:
+		origin_arr = [0.0, 0.0, 0.0]
+	if spacing_arr.size() >= 3:
+		# Preamble order is [sz, sy, sx]; Godot Vector3 is [x, y, z].
+		_spacing = Vector3(spacing_arr[2], spacing_arr[1], spacing_arr[0])
+	if origin_arr.size() >= 3:
+		_origin = Vector3(origin_arr[2], origin_arr[1], origin_arr[0])
+
+	var images: Array[Image] = []
+	for z in range(depth):
+		var start := offset + z * slice_bytes
+		var end := start + slice_bytes
+		var slice_buf := body.slice(start, end)
+		var img := _create_image_from_bytes(slice_buf, width, height, dtype)
+		if img == null:
+			push_error("WebVolumetricData.set_from_bytes: failed to create image for slice %d" % z)
+			return false
+		images.append(img)
+
+	var tex := ImageTexture3D.new()
+	tex.create(images[0].get_format(), width, height, depth, false, images)
+	_texture = tex
+	data_ready.emit()
+	return true
