@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "ascribe-bundle"
 dynamic = ["version"]
 description = "Bake static web bundles for the ascribe-web viewer"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = ["numpy>=1.26", "tifffile>=2024.0", "jsonschema>=4.21"]
 
 [project.optional-dependencies]
