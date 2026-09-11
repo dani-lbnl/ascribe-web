@@ -48,6 +48,32 @@ def gaussian_smooth(arr: np.ndarray, sigma: float) -> np.ndarray:
     return out
 
 
+def block_downsample(arr: np.ndarray, stride: int) -> np.ndarray:
+    """Downsample by averaging each `stride`^3 block (an anti-aliased decimation).
+
+    Taking every Nth voxel (`arr[::N, ::N, ::N]`) is cheaper but aliases: structure finer
+    than the new sampling interval folds back as moire rather than disappearing, which is
+    very visible in a raymarched volume. Averaging the block each output voxel covers is the
+    low-pass prefilter that decimation is supposed to have.
+
+    Ragged edges (a shape that isn't a multiple of `stride`) are handled by averaging the
+    short final block rather than dropping it.
+    """
+    if stride <= 1:
+        return arr
+
+    out = arr.astype(np.float64)
+    for axis in range(3):
+        length = out.shape[axis]
+        full = (length // stride) * stride
+        head = np.moveaxis(out, axis, 0)
+        blocks = head[:full].reshape(full // stride, stride, *head.shape[1:]).mean(axis=1)
+        if full < length:  # ragged tail: average whatever is left
+            blocks = np.concatenate([blocks, head[full:].mean(axis=0, keepdims=True)], axis=0)
+        out = np.moveaxis(blocks, 0, axis)
+    return out
+
+
 def convert_volume(
     arr: np.ndarray,
     dtype: str = "float16",
@@ -64,6 +90,9 @@ def convert_volume(
     few far-out outliers; plain min/max scaling then leaves the interesting structure with
     almost no contrast, so windowing (e.g. `(0.5, 99.5)`) is usually what you want.
 
+    `max_dim` downsamples any axis longer than it, by averaging blocks rather than striding
+    (see `block_downsample`) so fine structure low-passes away instead of aliasing into moire.
+
     `smooth` is a Gaussian sigma in voxels, applied after downsampling and before windowing.
     A little smoothing (0.6-1.0) takes the hard edges off blocky voxels without visibly
     softening real structure; `None` or 0 skips it.
@@ -75,7 +104,7 @@ def convert_volume(
         raise ValueError(f"dtype must be float16 or uint8, got {dtype}")
     if max_dim is not None and max(arr.shape) > max_dim:
         stride = math.ceil(max(arr.shape) / max_dim)
-        arr = arr[::stride, ::stride, ::stride]
+        arr = block_downsample(arr, stride)
 
     if smooth is not None and smooth > 0.0:
         arr = gaussian_smooth(arr, smooth)

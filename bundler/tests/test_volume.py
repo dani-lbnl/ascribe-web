@@ -124,3 +124,33 @@ def test_smooth_runs_before_windowing():
     arr[6, 6, 6] = 100.0
     out = convert_volume(arr, "uint8", smooth=1.0, window=(0.0, 100.0))
     assert (out > 0).sum() > 1  # the spike has neighbours now
+
+
+def test_downsampling_averages_blocks_instead_of_striding():
+    # Alternating bright/dark planes 1 voxel apart -- exactly the structure that plain
+    # striding aliases. Block averaging must return the local mean (~0.5), not whichever
+    # phase the stride happened to land on.
+    arr = np.zeros((12, 4, 4), dtype=np.float32)
+    arr[::2] = 1.0
+
+    out = convert_volume(arr, "float16", max_dim=6).astype(np.float32)
+
+    assert out.shape == (6, 2, 2)
+    assert np.allclose(out, 0.5, atol=0.01)
+
+
+def test_downsampling_preserves_coarse_structure():
+    # A smooth ramp must survive decimation with its overall shape intact.
+    ramp = np.linspace(0.0, 1.0, 24, dtype=np.float32)[:, None, None] * np.ones((24, 8, 8))
+    out = convert_volume(ramp.astype(np.float32), "float16", max_dim=12).astype(np.float32)
+    assert out.shape == (12, 4, 4)
+    profile = out.mean(axis=(1, 2))
+    assert profile[0] < 0.1 and profile[-1] > 0.9
+    assert np.all(np.diff(profile) > 0)
+
+
+def test_downsampling_handles_non_multiple_shapes():
+    arr = np.random.default_rng(3).random((10, 7, 5)).astype(np.float32)
+    out = convert_volume(arr, "float16", max_dim=5)
+    # ceil(10/5) = 2 -> every axis is halved, rounding up on ragged edges.
+    assert out.shape == (5, 4, 3)

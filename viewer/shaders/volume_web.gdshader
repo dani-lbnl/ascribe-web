@@ -1,127 +1,155 @@
-// Vendored from vr-start addons/volume_layered_shader/shaders/volume_shader.gdshader (1.1.0); local changes noted below.
-// - max_steps/step_size are now uniforms instead of consts (runtime quality control).
-// - texture_volume/gradient use filter_linear instead of filter_linear_mipmap (no mipmaps generated; WebGL2 mipmap filtering of a mipless texture is undefined-ish).
-// - removed the stereo debug tint (VIEW_INDEX == VIEW_RIGHT green tint) at the end of fragment().
-// - removed the unused `layers` uniform.
-// - zoom defaults to 1 (was 2, which pushed every sample outside the [0,1] texture range).
-// - dropped the multiview eye-offset adjustment on world_camera (see note in vertex()).
+// Vendored from vr-start shaders/raymarching.gdshader (as of c45c7ce, "Overhaul raymarching
+// shader: correct compositing, interval clipping, jitter, optional shading"). Note this is the
+// overhauled root-level shader, NOT addons/volume_layered_shader/shaders/volume_shader.gdshader,
+// which is the older copy this viewer originally vendored.
+//
+// Local changes:
+// - `zoom` is replaced by `box_extents`: SpecimenStage stages non-cubic volumes in a box whose
+//   largest axis is 1m, so the texture has to be normalized per-axis rather than by one scalar.
+// - filter_linear instead of filter_linear_mipmap (no mipmaps are generated; WebGL2 mipmap
+//   filtering of a mipless texture is undefined-ish).
+// - the per-eye offset does not use EYE_OFFSET: Godot 4.6's Compatibility (GLES3) backend only
+//   declares `eye_offset` in the multiview shader variant, so referencing it fails to compile
+//   the mono variant ("undefined variable eye_offset") and renders the volume black in a non-XR
+//   browser tab. See the note in vertex().
 shader_type spatial;
 render_mode unshaded, cull_front;
 
 const int MAX_EXCLUSION_PLANES = 4;
+// Opacity is calibrated against this step size; changing step_size only
+// changes quality, not the rendered density.
+const float REFERENCE_STEP = 0.005;
+
+uniform int max_steps = 256;
+uniform float step_size = 0.005;
 
 uniform sampler3D texture_volume : source_color, filter_linear, repeat_disable;
 uniform sampler2D gradient : filter_linear, repeat_disable;
-uniform float zoom = 1;
-uniform float opacity = 1;
-uniform float gamma = 1;
-uniform float color_scalar = 1;
-uniform int max_steps = 128;
-uniform float step_size = 0.01;
-// Half-extents (in local/object space) of the box the volume is staged in. Defaults to 0.5,
-// matching the original unit-cube assumption -- SpecimenStage overrides this per-specimen for
-// anisotropic (non-cubic) volumes so the texture fills the box exactly on every axis instead of
-// getting stretched/squashed.
+uniform float opacity = 1.0;
+uniform float gamma = 1.0;
+uniform float color_scalar = 1.0;
+// Half-extents (in object space) of the box the volume is staged in. 0.5 on every axis is a
+// unit cube; SpecimenStage overrides this per-specimen so an anisotropic volume fills its box
+// exactly on every axis instead of being stretched.
 uniform vec3 box_extents = vec3(0.5, 0.5, 0.5);
 uniform int num_exclusion_planes = 0;
+// Planes in object (mesh-local) space; kept region is dot(p, xyz) <= w.
 uniform vec4[MAX_EXCLUSION_PLANES] exclusion_planes;
 
+uniform bool shading_enabled = false;
+// Light direction in object space.
+uniform vec3 light_dir = vec3(0.5, 0.7, 0.5);
+uniform float ambient = 0.4;
+
 varying vec3 pos_local;
-varying vec3 pos_world;
-varying mat3 inv_model_rotation; // Precomputed rotation matrix
-varying vec3 inv_model_translation; // Precomputed translation vector
-varying vec3 world_camera;
-varying vec3 world_position;
+varying vec3 eye_pos_local;
+
 
 void vertex() {
-    world_position = VERTEX;
-    // Object-space camera position. NOTE: the upstream shader added EYE_OFFSET here for
-    // multiview stereo, but Godot 4.6's Compatibility (GLES3) backend only declares
-    // `eye_offset` in the multiview shader variant, so referencing it breaks compilation of
-    // the mono variant ("undefined variable eye_offset") -- which renders the whole volume
-    // black in a non-XR browser tab. EYE_OFFSET is zero in mono anyway; per-eye offset for
-    // XR needs re-testing on a headset.
-    world_camera = (inverse(MODELVIEW_MATRIX) * vec4(0, 0, 0, 1)).xyz; //object space
+	pos_local = VERTEX;
+
+	// Camera position in object space, so the fragment shader needs no matrix inverses.
+	//
+	// Upstream uses `(INV_VIEW_MATRIX * vec4(EYE_OFFSET, 1.0)).xyz` to get a per-eye position.
+	// EYE_OFFSET is unusable here: Godot 4.6's Compatibility (GLES3) backend only declares it
+	// in the multiview shader variant, so naming it breaks compilation of the mono variant and
+	// nothing draws in a normal browser tab. EYE_OFFSET is zero outside multiview anyway, so
+	// this matches upstream exactly in mono; stereo still needs re-testing on a headset.
+	eye_pos_local = (inverse(MODELVIEW_MATRIX) * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 }
 
-// Function to check if a point is outside of an exclusion plane
-bool is_outside_exclusion_planes(vec3 point) {
-    for (int i = 0; i < num_exclusion_planes; ++i) {
-        // Exclusion planes are stored in vec4 (x, y, z) as the normal and w as the distance
-        vec4 plane = exclusion_planes[i];
-        // Dot product between point and plane normal and check if it's greater than the plane's distance
-        if (dot(point, plane.xyz) > plane.w) {
-            return true; // Point is outside this exclusion plane
-        }
-    }
-    return false;
+
+// Clip the ray interval [t_near, t_far] to an axis-aligned box of the given
+// half extents centered at the origin.
+void clip_to_box(vec3 ro, vec3 rd, vec3 half_extents, inout float t_near, inout float t_far) {
+	vec3 t_a = (-half_extents - ro) / rd;
+	vec3 t_b = ( half_extents - ro) / rd;
+	vec3 t_lo = min(t_a, t_b);
+	vec3 t_hi = max(t_a, t_b);
+	t_near = max(t_near, max(max(t_lo.x, t_lo.y), t_lo.z));
+	t_far = min(t_far, min(min(t_hi.x, t_hi.y), t_hi.z));
 }
 
-// Raymarching function
-vec4 raymarch(vec3 ray_origin, vec3 ray_dir) {
-    vec4 accumulated_color = vec4(0.0, 0.0, 0.0, 0.0);
-    float total_opacity = 0.0;
 
-    for (int i = 0; i < max_steps; ++i) {
-        // Step along the ray
-        ray_origin += ray_dir * step_size;
-
-        // Sample the texture volume. Each axis is normalized by its own half-extent so the
-        // volume fills the (possibly non-cubic) box exactly, instead of assuming a unit cube.
-        vec3 tex_sample_pt = ((ray_origin / (2.0 * box_extents)) * zoom) + vec3(0.5, 0.5, 0.5);
-
-        // Skip invalid samples
-        if (any(lessThan(tex_sample_pt, vec3(0.0))) || any(greaterThan(tex_sample_pt, vec3(1.0))))
-            break;
-
-        // Check if the current point is outside of any exclusion planes
-        if (is_outside_exclusion_planes(ray_origin)) {
-            continue; // Skip this sample if it's outside of an exclusion plane
-        }
-
-        vec4 sample = texture(texture_volume, tex_sample_pt);
-        sample = texture(gradient, vec2(pow(sample.r, gamma), 0));
-
-        // Accumulate color and opacity
-        float sample_opacity = sample.a * opacity;
-        accumulated_color.rgb += sample.rgb * sample_opacity * (1.0 - total_opacity);
-        total_opacity += sample_opacity;
-
-        // If the opacity reaches 1, we can break out early
-        if (total_opacity >= 1.0)
-            break;
-    }
-
-    accumulated_color.a = total_opacity;
-    return accumulated_color;
+// Estimate the volume-density normal via central differences, in texture space.
+vec3 density_normal(vec3 uvw) {
+	vec3 eps = 1.0 / vec3(textureSize(texture_volume, 0));
+	float dx = texture(texture_volume, uvw + vec3(eps.x, 0.0, 0.0)).r
+	         - texture(texture_volume, uvw - vec3(eps.x, 0.0, 0.0)).r;
+	float dy = texture(texture_volume, uvw + vec3(0.0, eps.y, 0.0)).r
+	         - texture(texture_volume, uvw - vec3(0.0, eps.y, 0.0)).r;
+	float dz = texture(texture_volume, uvw + vec3(0.0, 0.0, eps.z)).r
+	         - texture(texture_volume, uvw - vec3(0.0, 0.0, eps.z)).r;
+	return vec3(dx, dy, dz);
 }
+
 
 void fragment() {
-    vec3 ro = world_camera;
-    vec3 rd = normalize(world_position - ro);
+	vec3 ro = eye_pos_local;
+	vec3 rd = normalize(pos_local - eye_pos_local);
 
-    // The box is centered at (0, 0, 0) with half-extents `box_extents` (0.5 = a unit cube; set
-    // per-specimen by SpecimenStage to match the staged BoxMesh's actual size).
+	// Clip the ray to the staged box. Texture coordinates are normalized by the same extents,
+	// so this one clip also keeps every sample inside [0, 1].
+	float t_near = 0.0;
+	float t_far = 1e20;
+	clip_to_box(ro, rd, box_extents, t_near, t_far);
 
-    // Ray-box intersection logic to clamp ray origin to the surface of the box
-    vec3 t_min = ( -box_extents - ro ) / rd; // Compute entry point of the ray
-    vec3 t_max = ( box_extents - ro ) / rd;  // Compute exit point of the ray
+	// The kept region of the exclusion planes (dot <= w for every plane) is
+	// convex, so it clips the interval exactly — no per-step tests needed.
+	for (int i = 0; i < num_exclusion_planes; ++i) {
+		vec4 plane = exclusion_planes[i];
+		float denom = dot(rd, plane.xyz);
+		float dist = plane.w - dot(ro, plane.xyz);
+		if (abs(denom) < 1e-6) {
+			if (dist < 0.0)
+				t_far = -1.0; // origin excluded, ray parallel: nothing kept
+		} else if (denom > 0.0) {
+			t_far = min(t_far, dist / denom);
+		} else {
+			t_near = max(t_near, dist / denom);
+		}
+	}
 
-    // Ensure t_min is less than t_max
-    vec3 t_near = min(t_min, t_max);
-    vec3 t_far = max(t_min, t_max);
+	if (t_far <= t_near)
+		discard;
 
-    // Find the largest of the entry points to determine where the ray first enters the box
-    float t_entry = max(max(t_near.x, t_near.y), t_near.z);
-    // The ray origin should be adjusted to this entry point
-    ro += rd * t_entry;
+	// Jitter the ray start (interleaved gradient noise) to break up the
+	// banding of fixed-step sampling.
+	float jitter = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
 
-    // Now perform raymarching from the adjusted origin
-    vec4 col = raymarch(ro, rd);
+	// Opacity correction keeps density independent of step size.
+	float step_ratio = step_size / REFERENCE_STEP;
+	vec3 accumulated_color = vec3(0.0);
+	float total_opacity = 0.0;
 
-    // Apply color scalar
-    col *= color_scalar;
+	for (int i = 0; i < max_steps; ++i) {
+		float t = t_near + (float(i) + jitter) * step_size;
+		if (t > t_far)
+			break;
 
-    ALBEDO = col.rgb;
-    ALPHA = col.a;
+		vec3 ray_pos = ro + rd * t;
+		vec3 tex_sample_pt = (ray_pos / (2.0 * box_extents)) + vec3(0.5);
+
+		float density = texture(texture_volume, tex_sample_pt).r;
+		vec4 sample = texture(gradient, vec2(pow(density, gamma), 0.5));
+
+		float sample_opacity = 1.0 - pow(1.0 - clamp(sample.a * opacity, 0.0, 1.0), step_ratio);
+
+		if (shading_enabled && sample_opacity > 0.001) {
+			vec3 n = density_normal(tex_sample_pt);
+			if (dot(n, n) > 1e-8) {
+				float diffuse = max(dot(normalize(n), normalize(light_dir)), 0.0);
+				sample.rgb *= ambient + (1.0 - ambient) * diffuse;
+			}
+		}
+
+		accumulated_color += sample.rgb * sample_opacity * (1.0 - total_opacity);
+		total_opacity += sample_opacity * (1.0 - total_opacity);
+
+		if (total_opacity >= 0.95)
+			break;
+	}
+
+	ALBEDO = accumulated_color * color_scalar;
+	ALPHA = total_opacity;
 }
