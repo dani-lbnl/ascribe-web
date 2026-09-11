@@ -40,7 +40,7 @@
   ],
   "story": [
     {
-      "text": "# Root\u2013microbe interface in agar\n\nA synchrotron microtomography reconstruction collected at the Advanced Light Source\n(beamline 8.3.2). The specimen is a pipette-mounted agar column (\"YES agar\", wet\npreparation) imaged in 2020 as part of a rhizosphere study.\n\nThe volume is an 8-bit reconstruction cropped to a region of interest: 1004 slices of\n521 x 816 voxels. Brightness tracks X-ray attenuation, so denser material \u2014 cell walls,\nmineral inclusions \u2014 reads bright, while pore space and water read dark.",
+      "text": "# Root\u2013microbe interface in agar\n\nA synchrotron microtomography reconstruction collected at the Advanced Light Source\n(beamline 8.3.2). The specimen is a pipette-mounted agar column (\"YES agar\", wet\npreparation) imaged in 2020 as part of a rhizosphere study by E. Singer and colleagues.\nIt appears here as a sample dataset for the ascribe-web viewer.\n\nThe volume is an 8-bit reconstruction cropped to a region of interest: 1004 slices of\n521 x 816 voxels, downsampled and contrast-windowed for the web. Brightness tracks X-ray attenuation, so denser material \u2014 cell walls,\nmineral inclusions \u2014 reads bright, while pore space and water read dark.",
       "specimen": "specimen_0"
     },
     {

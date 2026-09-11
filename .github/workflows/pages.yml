@@ -1,0 +1,88 @@
+name: Deploy viewer to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Pages deployments need these; the default GITHUB_TOKEN permissions are not enough.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a run finish rather than cancelling it mid-deploy, but never run two at once.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  GODOT_VERSION: 4.6-stable
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Godot and export templates
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot-bin
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}
+
+      - name: Install Godot and export templates
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}"
+          mkdir -p ~/godot-bin
+          curl -fsSL -o godot.zip "${base}/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
+          unzip -q godot.zip -d ~/godot-bin
+          mv ~/godot-bin/Godot_v${GODOT_VERSION}_linux.x86_64 ~/godot-bin/godot
+          chmod +x ~/godot-bin/godot
+
+          # Export templates must land in the exact versioned directory Godot looks in.
+          curl -fsSL -o templates.tpz "${base}/Godot_v${GODOT_VERSION}_export_templates.tpz"
+          unzip -q templates.tpz -d templates
+          template_dir=~/.local/share/godot/export_templates/${GODOT_VERSION/-/.}
+          mkdir -p "$template_dir"
+          mv templates/templates/* "$template_dir"/
+
+      - name: Export web build
+        run: |
+          set -euo pipefail
+          mkdir -p build/web
+          # Godot segfaults on exit after "Saving resource cache" in headless export; that is
+          # cosmetic, so check the artifacts rather than the exit code.
+          ~/godot-bin/godot --headless --path viewer \
+            --export-release Web ../build/web/index.html || true
+          test -s build/web/index.html
+          test -s build/web/index.wasm
+          test -s build/web/index.pck
+
+      - name: Stage bundles next to the viewer
+        run: |
+          set -euo pipefail
+          cp -r demo/bundle build/web/demo_bundle
+          cp -r demo/singer/bundle build/web/singer_bundle
+          # Pages' default Jekyll processing would drop files beginning with an underscore.
+          touch build/web/.nojekyll
+          ls -la build/web
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

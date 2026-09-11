@@ -2,10 +2,11 @@
 
 A synchrotron microtomography reconstruction collected at the Advanced Light Source
 (beamline 8.3.2). The specimen is a pipette-mounted agar column ("YES agar", wet
-preparation) imaged in 2020 as part of a rhizosphere study.
+preparation) imaged in 2020 as part of a rhizosphere study by E. Singer and colleagues.
+It appears here as a sample dataset for the ascribe-web viewer.
 
 The volume is an 8-bit reconstruction cropped to a region of interest: 1004 slices of
-521 x 816 voxels. Brightness tracks X-ray attenuation, so denser material — cell walls,
+521 x 816 voxels, downsampled and contrast-windowed for the web. Brightness tracks X-ray attenuation, so denser material — cell walls,
 mineral inclusions — reads bright, while pore space and water read dark.
 
 ---
