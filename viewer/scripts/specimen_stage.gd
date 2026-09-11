@@ -130,3 +130,24 @@ func _gradient_from_stops(stops: Array) -> GradientTexture1D:
 	var tex := GradientTexture1D.new()
 	tex.gradient = gradient
 	return tex
+
+
+## Pushes the per-eye view-space offsets to the staged volume's shader.
+##
+## The shader marches from a per-eye origin; with both offsets zero (the desktop default) the
+## two eyes would render identical images, which reads as a flat picture in a headset rather
+## than a solid object.
+func set_eye_offsets(left: Vector3, right: Vector3) -> void:
+	var mesh_instance := _current_mesh_instance()
+	if mesh_instance == null:
+		return
+	var mat: ShaderMaterial = mesh_instance.get_surface_override_material(0)
+	if mat == null or mat.shader != VOLUME_SHADER:
+		return
+	mat.set_shader_parameter("eye_offsets", PackedVector3Array([left, right]))
+
+
+## The offset of one eye from the head, expressed in the head's own (view) space -- which is
+## what the shader's `eye_offsets` expects. Pure math so it can be tested without a headset.
+static func eye_offset_in_view_space(head: Transform3D, eye: Transform3D) -> Vector3:
+	return head.affine_inverse() * eye.origin

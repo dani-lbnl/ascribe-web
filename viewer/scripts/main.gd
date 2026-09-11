@@ -200,6 +200,22 @@ func _apply_quality_tier() -> void:
 	$XROrigin3D/PanelViewport/DisplaySettingsPanel.set_display(tier)
 
 
+## Feeds the staged volume the current per-eye offsets while an XR session is running, so the
+## raymarch starts from the correct origin for each eye. The offsets are re-read every frame
+## rather than cached: IPD can change between sessions, and some runtimes only report a
+## meaningful value once tracking has settled.
+func _process(_delta: float) -> void:
+	if xr_interface == null or not get_viewport().use_xr:
+		return
+	var origin: XROrigin3D = $XROrigin3D
+	var head: Transform3D = $XROrigin3D/XRCamera3D.global_transform
+	var left := xr_interface.get_transform_for_view(0, origin.global_transform)
+	var right := xr_interface.get_transform_for_view(1, origin.global_transform)
+	$SpecimenStage.set_eye_offsets(
+		SpecimenStage.eye_offset_in_view_space(head, left),
+		SpecimenStage.eye_offset_in_view_space(head, right))
+
+
 ## Resolves the bundle base URL: `--bundle=<path-or-url>` after `--` on desktop, else the
 ## `?bundle=` query param on web, falling back to the fixture bundle when neither is given.
 func _resolve_bundle_url() -> String:

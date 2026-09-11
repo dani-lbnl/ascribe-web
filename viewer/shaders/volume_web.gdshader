@@ -11,10 +11,9 @@
 // - the march step widens when max_steps * step_size cannot span the clipped interval, so a
 //   volume is never truncated part-way through (the opacity correction follows the step
 //   actually used, so density stays consistent).
-// - the per-eye offset does not use EYE_OFFSET: Godot 4.6's Compatibility (GLES3) backend only
-//   declares `eye_offset` in the multiview shader variant, so referencing it fails to compile
-//   the mono variant ("undefined variable eye_offset") and renders the volume black in a non-XR
-//   browser tab. See the note in vertex().
+// - the per-eye offset comes from an `eye_offsets` uniform indexed by VIEW_INDEX rather than
+//   from EYE_OFFSET, which cannot be named at all under Godot 4.6's Compatibility (GLES3)
+//   backend without breaking the mono shader variant. See the note in vertex().
 shader_type spatial;
 render_mode unshaded, cull_front;
 
@@ -49,6 +48,10 @@ uniform bool shading_enabled = false;
 uniform vec3 light_dir = vec3(0.5, 0.7, 0.5);
 uniform float ambient = 0.4;
 
+// Per-view eye offset in view space, pushed by SpecimenStage while an XR session is running;
+// both entries stay zero on desktop. See the note in vertex() for why this is not EYE_OFFSET.
+uniform vec3 eye_offsets[2];
+
 varying vec3 pos_local;
 varying vec3 eye_pos_local;
 
@@ -56,14 +59,18 @@ varying vec3 eye_pos_local;
 void vertex() {
 	pos_local = VERTEX;
 
-	// Camera position in object space, so the fragment shader needs no matrix inverses.
+	// Per-eye camera position in object space, so the fragment shader needs no matrix inverses.
 	//
-	// Upstream uses `(INV_VIEW_MATRIX * vec4(EYE_OFFSET, 1.0)).xyz` to get a per-eye position.
-	// EYE_OFFSET is unusable here: Godot 4.6's Compatibility (GLES3) backend only declares it
-	// in the multiview shader variant, so naming it breaks compilation of the mono variant and
-	// nothing draws in a normal browser tab. EYE_OFFSET is zero outside multiview anyway, so
-	// this matches upstream exactly in mono; stereo still needs re-testing on a headset.
-	eye_pos_local = (inverse(MODELVIEW_MATRIX) * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+	// Upstream writes `(INV_VIEW_MATRIX * vec4(EYE_OFFSET, 1.0)).xyz`, but EYE_OFFSET cannot be
+	// named here at all: Godot 4.6's Compatibility (GLES3) backend only declares `eye_offset` in
+	// the multiview shader variant, so the mono variant fails to compile and nothing draws in a
+	// normal browser tab. Dropping it entirely compiled, but then both eyes marched from the
+	// same origin -- the image was identical in each eye, i.e. no stereo at all.
+	//
+	// VIEW_INDEX *does* compile in both variants, so the offsets come in as a uniform array
+	// instead and are indexed per view. inverse(MODELVIEW_MATRIX) == inverse(MODEL) *
+	// inverse(VIEW), so this is algebraically the same as upstream's two-step transform.
+	eye_pos_local = (inverse(MODELVIEW_MATRIX) * vec4(eye_offsets[VIEW_INDEX], 1.0)).xyz;
 }
 
 

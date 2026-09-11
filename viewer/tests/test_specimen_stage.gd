@@ -82,3 +82,38 @@ func test_gradient_from_stops() -> void:
 	var tex: GradientTexture1D = stage._gradient_from_stops([[0.0, "#00000000"], [1.0, "#ffffffff"]])
 	assert_that(tex).is_not_null()
 	assert_that(tex.gradient.get_point_count()).is_equal(2)
+
+
+# Regression: the shader's per-eye origin came from EYE_OFFSET, which cannot be named under
+# Godot 4.6's Compatibility backend without breaking the mono variant. Dropping it compiled but
+# left both eyes marching from the same origin -- no stereo at all in a headset. The offsets now
+# arrive as a uniform array indexed by VIEW_INDEX, so they have to actually reach the material.
+func test_set_eye_offsets_reaches_the_shader() -> void:
+	var stage: SpecimenStage = auto_free(SpecimenStage.new())
+	add_child(stage)
+	stage.stage("specimen_0", _load_fixture_volume(), {})
+
+	stage.set_eye_offsets(Vector3(-0.032, 0, 0), Vector3(0.032, 0, 0))
+
+	var mesh_child: MeshInstance3D = null
+	for child in stage.get_children():
+		if child is MeshInstance3D:
+			mesh_child = child
+	var mat: ShaderMaterial = mesh_child.get_surface_override_material(0)
+	var offsets = mat.get_shader_parameter("eye_offsets")
+	assert_that(offsets).is_not_null()
+	assert_float(offsets[0].x).is_equal_approx(-0.032, 0.0001)
+	assert_float(offsets[1].x).is_equal_approx(0.032, 0.0001)
+
+
+func test_eye_offset_is_measured_in_head_space() -> void:
+	# Head turned 90 degrees and standing away from the origin: an eye 32mm to the head's right
+	# must still report +0.032 on x, not its world displacement.
+	var head := Transform3D(Basis(Vector3.UP, PI / 2.0), Vector3(3, 1.6, -2))
+	var eye := Transform3D(head.basis, head * Vector3(0.032, 0, 0))
+
+	var offset := SpecimenStage.eye_offset_in_view_space(head, eye)
+
+	assert_float(offset.x).is_equal_approx(0.032, 0.0001)
+	assert_float(offset.y).is_equal_approx(0.0, 0.0001)
+	assert_float(offset.z).is_equal_approx(0.0, 0.0001)

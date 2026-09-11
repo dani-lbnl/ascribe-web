@@ -73,3 +73,12 @@ func test_march_step_widens_to_cover_the_interval() -> void:
 	assert_str(src).contains("float march_step = max(step_size, span / float(max_steps));")
 	assert_str(src).contains("float step_ratio = march_step / REFERENCE_STEP;")
 	assert_str(src).contains("(float(i) + jitter) * march_step;")
+
+
+# The per-eye origin must come from a uniform indexed by VIEW_INDEX. EYE_OFFSET cannot be named
+# without breaking the mono variant under Godot 4.6's Compatibility backend, but simply dropping
+# it made both eyes march from the same origin -- i.e. no stereo in a headset.
+func test_per_eye_origin_uses_view_index() -> void:
+	var src := _source()
+	assert_str(src).contains("uniform vec3 eye_offsets[2];")
+	assert_str(src).contains("vec4(eye_offsets[VIEW_INDEX], 1.0)")
