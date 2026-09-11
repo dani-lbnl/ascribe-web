@@ -30,7 +30,7 @@ func test_shader_does_not_reference_eye_offset() -> void:
 func test_ray_start_is_jittered() -> void:
 	var src := _source()
 	assert_str(src).contains("float jitter = fract(52.9829189")
-	assert_str(src).contains("(float(i) + jitter) * step_size")
+	assert_str(src).contains("(float(i) + jitter) * march_step")
 
 
 # Compositing must weight each sample by the remaining transmittance. Accumulating raw opacity
@@ -44,7 +44,7 @@ func test_compositing_weights_by_remaining_transmittance() -> void:
 func test_opacity_is_corrected_for_step_size() -> void:
 	var src := _source()
 	assert_str(src).contains("REFERENCE_STEP")
-	assert_str(src).contains("float step_ratio = step_size / REFERENCE_STEP;")
+	assert_str(src).contains("float step_ratio = march_step / REFERENCE_STEP;")
 
 
 # The march is bounded by an exact ray/box interval rather than by max_steps * step_size, which
@@ -63,3 +63,13 @@ func test_shader_loads_as_a_material() -> void:
 	var mat := ShaderMaterial.new()
 	mat.shader = shader
 	assert_that(mat.shader).is_not_null()
+
+
+# The march must span the clipped interval even when max_steps * step_size is shorter than it,
+# and the opacity correction has to follow the step actually taken or density would shift on
+# exactly those rays.
+func test_march_step_widens_to_cover_the_interval() -> void:
+	var src := _source()
+	assert_str(src).contains("float march_step = max(step_size, span / float(max_steps));")
+	assert_str(src).contains("float step_ratio = march_step / REFERENCE_STEP;")
+	assert_str(src).contains("(float(i) + jitter) * march_step;")

@@ -8,6 +8,9 @@
 //   largest axis is 1m, so the texture has to be normalized per-axis rather than by one scalar.
 // - filter_linear instead of filter_linear_mipmap (no mipmaps are generated; WebGL2 mipmap
 //   filtering of a mipless texture is undefined-ish).
+// - the march step widens when max_steps * step_size cannot span the clipped interval, so a
+//   volume is never truncated part-way through (the opacity correction follows the step
+//   actually used, so density stays consistent).
 // - the per-eye offset does not use EYE_OFFSET: Godot 4.6's Compatibility (GLES3) backend only
 //   declares `eye_offset` in the multiview shader variant, so referencing it fails to compile
 //   the mono variant ("undefined variable eye_offset") and renders the volume black in a non-XR
@@ -117,13 +120,20 @@ void fragment() {
 	// banding of fixed-step sampling.
 	float jitter = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
 
+	// max_steps * step_size is not guaranteed to span the clipped interval -- the desktop tier
+	// reaches 1.28 but a 1m staged volume's diagonal can be ~1.39, so corner-on views would
+	// drop the far side. Widen the step when the ray is longer than the budget covers, which
+	// trades a little sampling detail for never truncating the volume.
+	float span = max(t_far - t_near, 0.0);
+	float march_step = max(step_size, span / float(max_steps));
+
 	// Opacity correction keeps density independent of step size.
-	float step_ratio = step_size / REFERENCE_STEP;
+	float step_ratio = march_step / REFERENCE_STEP;
 	vec3 accumulated_color = vec3(0.0);
 	float total_opacity = 0.0;
 
 	for (int i = 0; i < max_steps; ++i) {
-		float t = t_near + (float(i) + jitter) * step_size;
+		float t = t_near + (float(i) + jitter) * march_step;
 		if (t > t_far)
 			break;
 

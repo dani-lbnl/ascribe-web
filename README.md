@@ -133,6 +133,20 @@ Godot 4.6, Compatibility renderer, single-threaded web export (no COOP/COEP head
 the host). A benign segfault after "Saving resource cache" during headless export is expected and
 does not indicate export failure -- check that the export artifacts were actually written/updated.
 
+## Comparing shader changes
+
+Volume rendering regressions are hard to judge by eye. `viewer/tools/shader_probe.gd` renders a
+fixed close-up of a bundle so two variants can be measured rather than eyeballed:
+
+```powershell
+& "<godot>" --path viewer --quit-after 4000 --fixed-fps 30 --write-movie out\p.png `
+    -s res://tools/shader_probe.gd -- --bundle=http://localhost:8060/singer_bundle `
+    --param=max_steps:512 --param=step_size:0.0025
+```
+
+`--param` pokes a uniform on the staged material, which is the only way to override the startup
+quality tier (it takes precedence over the manifest's `max_steps`/`step_size`).
+
 ## Running tests
 
 Bundler (pytest):
