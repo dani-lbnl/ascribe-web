@@ -91,6 +91,15 @@ uniform int lut_substeps = 48;
 // surface's density ramp, so the pixel takes its colour from the ramp rather than from the
 // material behind it -- and exactly where that happens shifts with sub-voxel phase, which is
 // banding. 0.995 costs a longer march in dense volumes but removes most of that.
+//
+// This is easiest to see with a single-colour transfer function, where the colour factors out
+// of the sum entirely: accumulated = sum(c * a_i * T_i) = c * total_opacity, so the pixel is
+// c * alpha and the ONLY thing that can vary is alpha. On a solid every ray saturates, so alpha
+// should be identical everywhere -- except the march stops at a discrete crossing and overshoots
+// into [cutoff, 1] by however much the last increment happened to add. Measured on the cube's
+// interior with a flat LUT: 12 distinct values at cutoff 0.95, 2 at 0.995, and exactly 1
+// (std 0.000) at 0.9999. With a colour ramp there is a second, larger effect on top: *which*
+// colour is picked depends on the density at which saturation occurred.
 uniform float saturation_cutoff = 0.995;
 
 // How a ray turns a column of density into a pixel.
