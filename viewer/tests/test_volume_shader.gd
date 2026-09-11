@@ -122,7 +122,13 @@ func test_projection_modes_exist_and_default_to_compositing() -> void:
 # cutoff is still quantising where rays stop, which is why both must stay on.
 func test_saturation_cutoff_and_lut_substepping_are_enabled() -> void:
 	var src := _source()
-	assert_str(src).contains("uniform int lut_substeps = 4;")
+	assert_str(src).contains("uniform int lut_substeps = 48;")
+	# Sub-steps are allocated by how far the sample moved along the transfer function, not by
+	# how far the density moved: with a high gamma a small density change can still cross a
+	# steep part of the LUT, and scaling on raw density measurably under-serves exactly the
+	# samples that generate the banding.
+	assert_str(src).contains("float lut_delta = abs(lut_to - lut_from);")
+	assert_str(src).contains("int substeps = clamp(int(ceil(lut_delta * float(lut_substeps)))")
 	assert_str(src).contains("uniform float saturation_cutoff = 0.995;")
 	assert_str(src).contains("if (total_opacity >= saturation_cutoff)")
 

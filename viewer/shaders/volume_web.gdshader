@@ -23,7 +23,7 @@ const int MAX_EXCLUSION_PLANES = 4;
 const float REFERENCE_STEP = 0.005;
 // Upper bound for the transfer-function sub-stepping loop. The loop breaks at `lut_substeps`,
 // but a constant bound keeps the shader friendly to drivers that dislike dynamic loop limits.
-const int MAX_LUT_SUBSTEPS = 8;
+const int MAX_LUT_SUBSTEPS = 16;
 
 uniform int max_steps = 256;
 uniform float step_size = 0.005;
@@ -75,11 +75,13 @@ uniform float jitter_amount = 1.0;
 //
 // Measured: it does reduce the step-dependence (brightness drift from 512 to 4096 steps falls
 // from 2.4% to 1.7%) but it does NOT fix the banding, and face variation on the synthetic cube
-// Measured on the synthetic cube, together with a higher saturation_cutoff (the two interact --
-// sub-stepping alone looks useless while the cutoff is quantising where rays stop): banding
-// residual on a uniform face falls from 3.43 to 1.60, a 53% reduction. Costs 3 extra 1D LUT
-// lookups per sample but no extra volume fetches, which are the expensive part.
-uniform int lut_substeps = 4;
+// This is the *maximum* number of sub-steps, used when the density changes by the full range
+// between two samples; the actual count scales with the density delta, so samples in uniform
+// regions cost one lookup. That matters because the artifact converges with sub-step count:
+// measured on the cube at maximum gamma/opacity, residual structure falls 9.81 -> 4.55 -> 2.73
+// at 1 / 4 / 8 fixed sub-steps. The steeper the transfer function, the more are needed, which
+// is why a fixed count that looked sufficient at default settings was not at extreme ones.
+uniform int lut_substeps = 48;
 
 // Opacity at which the march gives up: everything behind contributes less than (1 - this).
 // Cutting off early is a performance win but quantises where a ray stops, which for a steep
@@ -286,7 +288,16 @@ void fragment() {
 		// rather than evaluating it at this sample alone. Each sub-step carries 1/n of the
 		// segment's optical depth, so the composite is unchanged when the LUT is flat and
 		// correct when it is steep.
-		int substeps = clamp(lut_substeps, 1, MAX_LUT_SUBSTEPS);
+		// Spend sub-steps only where they buy something. What matters is not how far the
+		// density moved but how far along the transfer function that moves the lookup -- with
+		// a high gamma a small density change can still cross a steep part of the LUT. So
+		// measure the delta in lookup space, after gamma. Samples inside uniform material move
+		// nowhere along the LUT and cost a single lookup; samples crossing a surface ramp get
+		// the full budget, which is exactly where the banding is generated.
+		float lut_from = pow(clamp(has_prev ? prev_density : density, 0.0, 1.0), gamma);
+		float lut_to = pow(clamp(density, 0.0, 1.0), gamma);
+		float lut_delta = abs(lut_to - lut_from);
+		int substeps = clamp(int(ceil(lut_delta * float(lut_substeps))), 1, MAX_LUT_SUBSTEPS);
 		float sub_ratio = step_ratio / float(substeps);
 		float d_from = has_prev ? prev_density : density;
 
