@@ -21,6 +21,9 @@ const int MAX_EXCLUSION_PLANES = 4;
 // Opacity is calibrated against this step size; changing step_size only
 // changes quality, not the rendered density.
 const float REFERENCE_STEP = 0.005;
+// Upper bound for the transfer-function sub-stepping loop. The loop breaks at `lut_substeps`,
+// but a constant bound keeps the shader friendly to drivers that dislike dynamic loop limits.
+const int MAX_LUT_SUBSTEPS = 8;
 
 uniform int max_steps = 256;
 uniform float step_size = 0.005;
@@ -55,6 +58,39 @@ uniform bool manual_filter = false;
 // With jitter off, sampling-phase error becomes coherent banding instead of fine noise, which
 // distinguishes "sampling position" artifacts from "reconstruction" artifacts.
 uniform float jitter_amount = 1.0;
+
+// How many times to evaluate the transfer function between consecutive density samples.
+//
+// The march samples density at discrete points and looks the LUT up at each one. When the LUT
+// is steep, the colour and opacity between two consecutive samples are not well represented by
+// either endpoint, so the result depends on exactly where the samples land -- which is a
+// function of ray direction, so it varies across a curved surface and reads as banding. It also
+// means the render is not step-invariant: brightness drifts as step size changes, even though
+// the opacity correction is supposed to prevent that.
+//
+// Assuming density varies linearly between consecutive samples (true to first order), the fix
+// is to integrate the LUT across that interval instead of point-sampling it. This is the cheap
+// form of pre-integration (Engel et al. 2001): it costs extra 1D LUT lookups but no extra
+// volume-texture fetches, which are the expensive part. 1 reproduces the old behaviour.
+//
+// Measured: it does reduce the step-dependence (brightness drift from 512 to 4096 steps falls
+// from 2.4% to 1.7%) but it does NOT fix the banding, and face variation on the synthetic cube
+// gets marginally worse (4.90 -> 5.03 -> 5.16 at 1/4/8 substeps). So it ships off; it is here
+// because it identifies the mechanism, not because it earns its cost.
+uniform int lut_substeps = 1;
+
+// How a ray turns a column of density into a pixel.
+//
+//   0 -- emission/absorption: look the transfer function up at every sample and composite
+//        front-to-back. Standard volume rendering, and what gives depth cues, but every
+//        compositing-side artifact lives here: the first sample with meaningful alpha
+//        dominates the pixel's colour, and a steep LUT is under-resolved between samples.
+//   1 -- maximum intensity projection: reduce the ray to the largest density it crosses, then
+//        apply the transfer function once. No compositing at all, so none of those artifacts
+//        are possible. Loses depth ordering (a bright feature looks the same at any depth).
+//   2 -- mean density along the ray, then the transfer function once. Like a radiograph;
+//        keeps relative thickness but flattens structure.
+uniform int projection_mode = 0;
 
 uniform bool shading_enabled = false;
 // Light direction in object space.
@@ -203,6 +239,14 @@ void fragment() {
 	float step_ratio = march_step / REFERENCE_STEP;
 	vec3 accumulated_color = vec3(0.0);
 	float total_opacity = 0.0;
+	// Density at the previous march step, so the transfer function can be integrated across the
+	// interval between samples rather than point-sampled at each one.
+	float prev_density = 0.0;
+	bool has_prev = false;
+	// Scalar projections (modes 1 and 2) reduce the ray before touching the transfer function.
+	float max_density = 0.0;
+	float density_sum = 0.0;
+	float density_count = 0.0;
 
 	for (int i = 0; i < max_steps; ++i) {
 		float t = t_near + (float(i) + jitter) * march_step;
@@ -216,24 +260,71 @@ void fragment() {
 		float density = manual_filter
 			? sample_volume_manual(sample_pt)
 			: texture(texture_volume, sample_pt).r;
-		vec4 sample = texture(gradient, vec2(pow(density, gamma), 0.5));
 
-		float sample_opacity = 1.0 - pow(1.0 - clamp(sample.a * opacity, 0.0, 1.0), step_ratio);
+		if (projection_mode != 0) {
+			max_density = max(max_density, density);
+			density_sum += density;
+			density_count += 1.0;
+			prev_density = density;
+			has_prev = true;
+			continue;
+		}
 
-		if (shading_enabled && sample_opacity > 0.001) {
+		// Integrate the transfer function across the density interval [prev_density, density]
+		// rather than evaluating it at this sample alone. Each sub-step carries 1/n of the
+		// segment's optical depth, so the composite is unchanged when the LUT is flat and
+		// correct when it is steep.
+		int substeps = clamp(lut_substeps, 1, MAX_LUT_SUBSTEPS);
+		float sub_ratio = step_ratio / float(substeps);
+		float d_from = has_prev ? prev_density : density;
+
+		vec3 shade_scale = vec3(1.0);
+		if (shading_enabled) {
 			vec3 n = density_normal(tex_sample_pt);
 			if (dot(n, n) > 1e-8) {
 				float diffuse = max(dot(normalize(n), normalize(light_dir)), 0.0);
-				sample.rgb *= ambient + (1.0 - ambient) * diffuse;
+				shade_scale = vec3(ambient + (1.0 - ambient) * diffuse);
 			}
 		}
 
-		accumulated_color += sample.rgb * sample_opacity * (1.0 - total_opacity);
-		total_opacity += sample_opacity * (1.0 - total_opacity);
+		for (int k = 0; k < MAX_LUT_SUBSTEPS; ++k) {
+			if (k >= substeps)
+				break;
+			// Midpoint of this sub-interval in density space.
+			float u = (float(k) + 0.5) / float(substeps);
+			float d = mix(d_from, density, u);
+			vec4 sample = texture(gradient, vec2(pow(d, gamma), 0.5));
+			float sample_opacity =
+				1.0 - pow(1.0 - clamp(sample.a * opacity, 0.0, 1.0), sub_ratio);
+
+			accumulated_color +=
+				sample.rgb * shade_scale * sample_opacity * (1.0 - total_opacity);
+			total_opacity += sample_opacity * (1.0 - total_opacity);
+		}
+
+		prev_density = density;
+		has_prev = true;
+
+		// Saturated: everything behind this contributes nothing. Must break the march itself,
+		// not just the sub-step loop, or the ray keeps stepping for no reason.
+		if (total_opacity >= 0.95)
+			break;
 
 		if (total_opacity >= 0.95)
 			break;
 	}
+
+	if (projection_mode != 0) {
+		// One transfer-function lookup for the whole ray: no compositing, so no first-sample
+		// dominance and nothing to under-resolve between samples.
+		float scalar = projection_mode == 1
+			? max_density
+			: (density_count > 0.0 ? density_sum / density_count : 0.0);
+		vec4 mapped = texture(gradient, vec2(pow(scalar, gamma), 0.5));
+		float a = clamp(mapped.a * opacity, 0.0, 1.0);
+		ALBEDO = mapped.rgb * a * color_scalar;   // premultiplied, to match the blend mode
+		ALPHA = a;
+	} else {
 
 	// The march accumulates colour already weighted by each sample's opacity, so the output is
 	// premultiplied. blend_premul_alpha composites that as `src.rgb + dst * (1 - src.a)`, which
@@ -241,4 +332,5 @@ void fragment() {
 	// everything in proportion to its own transparency and amplifying sampling variation.
 	ALBEDO = accumulated_color * color_scalar;
 	ALPHA = total_opacity;
+	}
 }

@@ -101,3 +101,30 @@ func test_diagnostic_uniforms_default_off() -> void:
 	assert_str(src).contains("uniform bool manual_filter = false;")
 	assert_str(src).contains("uniform bool smooth_sampling = false;")
 	assert_str(src).contains("uniform float jitter_amount = 1.0;")
+
+
+# Scalar projection modes: mode 0 composites (standard volume rendering), 1 is maximum
+# intensity projection and 2 is mean density -- both reduce the ray to one number before
+# touching the transfer function, so neither can produce compositing artifacts.
+func test_projection_modes_exist_and_default_to_compositing() -> void:
+	var src := _source()
+	assert_str(src).contains("uniform int projection_mode = 0;")
+	assert_str(src).contains("float scalar = projection_mode == 1")
+	# The scalar path must output premultiplied colour to match the blend mode.
+	assert_str(src).contains("ALBEDO = mapped.rgb * a * color_scalar;")
+
+
+# Transfer-function sub-stepping is a diagnostic, not a default: it reduces step-dependence but
+# costs LUT fetches and does not fix the banding.
+func test_lut_substepping_defaults_off() -> void:
+	assert_str(_source()).contains("uniform int lut_substeps = 1;")
+
+
+# Regression: the saturation early-exit must end the march, not just the sub-step loop, or the
+# ray keeps stepping after it can no longer contribute anything.
+func test_saturation_breaks_the_march_not_just_the_substep_loop() -> void:
+	var src := _source()
+	var marker := "// Saturated: everything behind this contributes nothing."
+	assert_str(src).contains(marker)
+	var tail := src.substr(src.find(marker))
+	assert_str(tail).contains("if (total_opacity >= 0.95)")

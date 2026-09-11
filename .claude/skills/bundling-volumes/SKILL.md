@@ -120,11 +120,26 @@ Two diagnostic uniforms exist for this: `manual_filter` replaces the hardware sa
 float32 trilinear blend (8 texelFetches), and `jitter_amount` scales the per-ray start jitter
 (0 turns sampling-phase error from noise into coherent banding, which makes it identifiable).
 
-The remaining lead is **transfer-function under-resolution**: brightness still drifts with step
+Then ruled out by later work: **compositing is not the cause of the residual banding on real
+data.** `projection_mode:1` (maximum intensity projection) reduces each ray to one number and
+applies the transfer function once -- no compositing at all -- and the ALS banding is *stronger*
+there (peak 132k vs 23k) and completely invariant to step count (512 vs 4096 identical) and to
+`manual_filter`. Whatever remains is in the scalar field.
+
+Tracing the pipeline stage by stage on the ALS volume, the periodic component is present in the
+**raw file** (period 86.8 voxels along the short axis, which is exactly the 29.0 seen after
+stride-3 decimation). The pipeline does not create it -- but `--smooth` raises its *relative*
+prominence sharply (peak/median 3.91 -> 9.11 at sigma 1.5), because smoothing removes broadband
+detail while leaving a low-frequency periodic component untouched. So heavier smoothing trades
+texture for a cleaner-looking but relatively *more* periodic image.
+
+The older lead, **transfer-function under-resolution**: brightness still drifts with step
 count even with a flat colour (197.6 -> 189.9 from 512 to 4096 steps), which means the LUT is
 being point-sampled between consecutive density samples rather than integrated across them. The
-textbook fix is a pre-integrated transfer function (Engel et al. 2001): precompute a 2D table
-indexed by (front density, back density) instead of evaluating the LUT at a single point.
+textbook fix is a pre-integrated transfer function (Engel et al. 2001). A cheap form of it is
+implemented as `lut_substeps` (integrate the LUT across the density interval between consecutive
+samples). It ships off: it reduces the drift (2.4% -> 1.7%) but does not fix the banding and
+marginally worsens face variation.
 
 Hypotheses already tested and rejected for the ALS bundle's banding: ray-step aliasing,
 trilinear interpolation (quintic-smoothed texel coordinates made no difference — the flag is
