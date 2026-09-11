@@ -90,3 +90,38 @@ func test_frame_clamps_result() -> void:
 	var cam: OrbitCamera = auto_free(OrbitCamera.new())
 	cam.frame(1000.0)
 	assert_float(cam.distance).is_equal_approx(10.0, 0.0001)
+
+
+func test_pose_string_round_trips() -> void:
+	var cam: OrbitCamera = auto_free(OrbitCamera.new())
+	add_child(cam)
+	cam.yaw = 1.2345
+	cam.pitch = 0.4
+	cam.distance = 2.5
+
+	var other: OrbitCamera = auto_free(OrbitCamera.new())
+	add_child(other)
+	assert_bool(other.apply_pose_string(cam.pose_string())).is_true()
+
+	assert_float(other.yaw).is_equal_approx(1.2345, 0.001)
+	assert_float(other.pitch).is_equal_approx(0.4, 0.001)
+	assert_float(other.distance).is_equal_approx(2.5, 0.001)
+
+
+func test_apply_pose_string_rejects_junk_without_moving_the_camera() -> void:
+	var cam: OrbitCamera = auto_free(OrbitCamera.new())
+	add_child(cam)
+	cam.yaw = 0.5
+
+	assert_bool(cam.apply_pose_string("not,a,pose")).is_false()
+	assert_bool(cam.apply_pose_string("1.0,2.0")).is_false()
+	assert_float(cam.yaw).is_equal_approx(0.5, 0.001)
+
+
+func test_apply_pose_string_clamps_out_of_range_values() -> void:
+	var cam: OrbitCamera = auto_free(OrbitCamera.new())
+	add_child(cam)
+
+	assert_bool(cam.apply_pose_string("0.0,99.0,999.0")).is_true()
+	assert_float(absf(sin(cam.pitch))).is_less(0.999)
+	assert_float(cam.distance).is_less_equal(10.0)

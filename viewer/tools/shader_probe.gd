@@ -40,10 +40,18 @@ func _init() -> void:
 		push_error("probe: no OrbitCamera in main scene")
 		quit(1)
 		return
-	cam.yaw = 0.62
-	cam.pitch = 0.22
-	cam.distance = 0.55
-	cam._sync_transform()
+	# main.gd already applies any --view=; only fall back to the default close-up when none
+	# was given, so a pose captured from a real session reproduces exactly.
+	var has_view := false
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--view="):
+			has_view = true
+	if not has_view:
+		cam.yaw = 0.62
+		cam.pitch = 0.22
+		cam.distance = 0.55
+		cam._sync_transform()
+	print("probe: pose ", cam.pose_string())
 
 	# Override shader params from the command line: -- --param=name:value (repeatable).
 	# The startup quality tier overwrites whatever the manifest asked for, so poke the
@@ -57,7 +65,13 @@ func _init() -> void:
 		if arg.begins_with("--param="):
 			var kv := arg.substr("--param=".length()).split(":")
 			var name := kv[0]
-			var value: Variant = int(kv[1]) if name == "max_steps" else float(kv[1])
+			var value: Variant
+			if kv[1] == "true" or kv[1] == "false":
+				value = kv[1] == "true"
+			elif name == "max_steps":
+				value = int(kv[1])
+			else:
+				value = float(kv[1])
 			mat.set_shader_parameter(name, value)
 			print("probe: set ", name, " = ", value)
 	for i in range(60):

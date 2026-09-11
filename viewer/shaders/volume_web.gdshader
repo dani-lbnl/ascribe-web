@@ -39,6 +39,11 @@ uniform int num_exclusion_planes = 0;
 // Planes in object (mesh-local) space; kept region is dot(p, xyz) <= w.
 uniform vec4[MAX_EXCLUSION_PLANES] exclusion_planes;
 
+// Smooths the hardware's trilinear reconstruction (see quintic_texel_coord). Off by default:
+// on the close-up tested so far it made no measurable difference to the banding, so it is not
+// worth the per-sample cost until a view is found where it helps.
+uniform bool smooth_sampling = false;
+
 uniform bool shading_enabled = false;
 // Light direction in object space.
 uniform vec3 light_dir = vec3(0.5, 0.7, 0.5);
@@ -71,6 +76,25 @@ void clip_to_box(vec3 ro, vec3 rd, vec3 half_extents, inout float t_near, inout 
 	vec3 t_hi = max(t_a, t_b);
 	t_near = max(t_near, max(max(t_lo.x, t_lo.y), t_lo.z));
 	t_far = min(t_far, min(min(t_hi.x, t_hi.y), t_hi.z));
+}
+
+
+// Reshape the position *within* a texel so the hardware's trilinear blend becomes smooth
+// across voxel boundaries.
+//
+// Trilinear interpolation is continuous but its derivative is not: it kinks at every voxel
+// boundary. Where a surface crosses the grid at a shallow angle those kinks line up into
+// ridges whose spacing is the voxel pitch -- banding that does not move when you change the
+// ray step size, because it is a property of the reconstruction, not of the sampling.
+// Applying the quintic smoothstep 6t^5-15t^4+10t^3 to the in-texel fraction makes the
+// interpolant C1-continuous, so the ridges have nothing to line up on.
+vec3 quintic_texel_coord(vec3 uvw) {
+	vec3 res = vec3(textureSize(texture_volume, 0));
+	vec3 p = uvw * res - 0.5;
+	vec3 base = floor(p);
+	vec3 f = p - base;
+	f = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+	return (base + 0.5 + f) / res;
 }
 
 
@@ -140,7 +164,9 @@ void fragment() {
 		vec3 ray_pos = ro + rd * t;
 		vec3 tex_sample_pt = (ray_pos / (2.0 * box_extents)) + vec3(0.5);
 
-		float density = texture(texture_volume, tex_sample_pt).r;
+		float density = texture(texture_volume, smooth_sampling
+			? quintic_texel_coord(tex_sample_pt)
+			: tex_sample_pt).r;
 		vec4 sample = texture(gradient, vec2(pow(density, gamma), 0.5));
 
 		float sample_opacity = 1.0 - pow(1.0 - clamp(sample.a * opacity, 0.0, 1.0), step_ratio);

@@ -50,3 +50,12 @@ func test_step_size_for_interpolates_between_anchors() -> void:
 	var mid := Quality.step_size_for(192)
 	assert_that(mid).is_greater(0.005)
 	assert_that(mid).is_less(0.008)
+
+
+# Regression: the desktop tier used to land on the quality slider's maximum, so a user could
+# only ever move quality *down* -- "increasing Quality does nothing" was literally true.
+func test_slider_has_headroom_above_the_desktop_tier() -> void:
+	assert_that(DisplaySettingsPanel.MAX_STEPS).is_greater(Quality.DESKTOP_STEPS)
+	assert_that(float(Quality.step_size_for(1024))).is_equal(0.00125)
+	# ...and a finer step than the desktop tier's, or the headroom would be cosmetic.
+	assert_that(Quality.step_size_for(1024)).is_less(Quality.step_size_for(Quality.DESKTOP_STEPS))

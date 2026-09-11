@@ -36,10 +36,85 @@ func _ready() -> void:
 	_bundle_base_url = _resolve_bundle_url()
 	_loader.load_bundle(_bundle_base_url)
 
+	_wire_panel_textures()
+	_frame_specimen_for_desktop()
 	_wire_xr_grab()
 	_wire_display_panels()
 	_wire_story_panels()
 	_apply_quality_tier()
+
+
+## Aims the desktop orbit camera at the staged specimen.
+##
+## The specimen sits ahead of the XR origin at roughly eye height (see SpecimenStage's transform
+## in main.tscn) rather than at the world origin, because in a headset the origin is on the floor
+## between the user's feet -- a specimen there spawns underneath them. The desktop camera has to
+## orbit that same point instead of the origin.
+func _frame_specimen_for_desktop() -> void:
+	var cam: OrbitCamera = $Camera3D
+	cam.target = $SpecimenStage.position
+	cam.frame(1.0)
+	# An explicit `?view=yaw,pitch,distance` (or `--view=` on desktop) overrides the default
+	# framing, so a specific view can be shared, reported in a bug, or replayed by the
+	# shader probe.
+	var view := _resolve_view_value()
+	if view != "" and not cam.apply_pose_string(view):
+		push_warning("ignoring malformed view '%s'" % [view])
+
+
+## Reads a requested camera pose from `--view=` (desktop) or `?view=` (web); "" when absent.
+func _resolve_view_value() -> String:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--view="):
+			return arg.substr("--view=".length())
+	if OS.has_feature("web"):
+		var search: String = JavaScriptBridge.eval("window.location.search", true)
+		if search is String and search != "":
+			for pair in (search as String).trim_prefix("?").split("&"):
+				var kv := pair.split("=", true, 1)
+				if kv.size() == 2 and kv[0] == "view":
+					return kv[1].uri_decode()
+	return ""
+
+
+## Press V to print the current view as a shareable URL. The print lands in the browser console
+## (F12), so a specific viewpoint can be copied out of a running session and handed to someone
+## else -- including back to a developer reproducing a rendering artifact.
+func _unhandled_key_input(event: InputEvent) -> void:
+	if not (event is InputEventKey and event.pressed and not event.echo):
+		return
+	if (event as InputEventKey).keycode != KEY_V:
+		return
+	var pose: String = ($Camera3D as OrbitCamera).pose_string()
+	if OS.has_feature("web"):
+		var href = JavaScriptBridge.eval("location.origin + location.pathname", true)
+		var bundle := _bundle_base_url.get_file()
+		print("view URL: %s?bundle=%s&view=%s" % [href, bundle, pose])
+	else:
+		print("view: %s" % [pose])
+
+
+## Points each in-VR panel quad at its SubViewport's live texture.
+##
+## The scene stores these as ViewportTexture sub-resources with a `viewport_path`, which does not
+## reliably resolve at runtime -- when it fails the quad falls back to the missing-texture
+## material and the panel shows up in the headset as a pink checkerboard. Assigning
+## `SubViewport.get_texture()` directly sidesteps the path lookup entirely.
+func _wire_panel_textures() -> void:
+	var pairs := [
+		[$XROrigin3D/PanelQuad, $XROrigin3D/PanelViewport],
+		[$XROrigin3D/StoryQuad, $XROrigin3D/StoryViewport],
+	]
+	for pair in pairs:
+		var quad: MeshInstance3D = pair[0]
+		var viewport: SubViewport = pair[1]
+		var mat := quad.get_surface_override_material(0)
+		if mat is StandardMaterial3D:
+			# Duplicate so the two quads can't share one material instance.
+			var own: StandardMaterial3D = (mat as StandardMaterial3D).duplicate()
+			own.albedo_texture = viewport.get_texture()
+			own.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			quad.set_surface_override_material(0, own)
 
 
 ## Wires the grab controller node to the two hand controllers and the staged specimen. Left as a
@@ -77,6 +152,12 @@ func _wire_display_panels() -> void:
 		$SpecimenStage.apply_display(display)
 	$CanvasLayer/DisplaySettingsPanel.display_changed.connect(on_display_changed)
 	$XROrigin3D/PanelViewport/DisplaySettingsPanel.display_changed.connect(on_display_changed)
+
+	# Only the in-VR panel offers a way out: in a headset there is no browser chrome to fall
+	# back on, and the system gesture is not obvious to someone wearing it for the first time.
+	var vr_panel: DisplaySettingsPanel = $XROrigin3D/PanelViewport/DisplaySettingsPanel
+	vr_panel.set_exit_vr_visible(true)
+	vr_panel.exit_vr_requested.connect(_exit_vr)
 
 
 ## Connects both the desktop and in-VR story panels: on page navigation that pins a different
@@ -198,6 +279,15 @@ func _enter_vr() -> void:
 	xr_interface.required_features = "local-floor"
 	if not xr_interface.initialize():
 		push_error("WebXR initialize() failed")
+
+
+## Ends the WebXR session. `uninitialize()` drops the session, which fires session_ended and
+## puts the viewport back into desktop mode.
+func _exit_vr() -> void:
+	if xr_interface != null:
+		xr_interface.uninitialize()
+	get_viewport().use_xr = false
+	$CanvasLayer/EnterVR.visible = true
 
 
 func _on_session_started() -> void:

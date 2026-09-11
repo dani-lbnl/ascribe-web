@@ -27,6 +27,7 @@ const _STEP_SIZE_POINTS := [
 	[MOBILE_STEPS, 0.008],
 	[XR_STEPS, 0.005],
 	[DESKTOP_STEPS, 0.0025],
+	[1024.0, 0.00125],
 ]
 
 

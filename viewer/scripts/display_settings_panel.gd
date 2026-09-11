@@ -5,9 +5,14 @@ class_name DisplaySettingsPanel
 extends Control
 
 signal display_changed(display: Dictionary)
+## Emitted when the panel's Exit VR button is pressed. The desktop copy of this panel hides the
+## button (there is nothing to exit), so only the in-VR instance ever emits it.
+signal exit_vr_requested
 
 const MIN_STEPS := 32
-const MAX_STEPS := 512
+# Above the desktop tier (512) so the slider always has headroom -- a default that sits at the
+# slider's ceiling reads as "raising quality does nothing".
+const MAX_STEPS := 1024
 
 
 func _ready() -> void:
@@ -25,6 +30,10 @@ func _ready() -> void:
 	$VBox/Quality.max_value = MAX_STEPS
 	$VBox/Quality.value = 128
 	$VBox/Quality.value_changed.connect(func(_v): _emit_changed())
+
+	$VBox/ExitVR.pressed.connect(func(): exit_vr_requested.emit())
+	# Shown only in VR; set_exit_vr_visible() turns it on for the in-headset instance.
+	$VBox/ExitVR.visible = false
 
 
 func _emit_changed() -> void:
@@ -52,3 +61,9 @@ func set_display(display: Dictionary) -> void:
 		$VBox/Opacity.set_value_no_signal(display["opacity"])
 	if display.has("max_steps"):
 		$VBox/Quality.set_value_no_signal(display["max_steps"])
+
+
+## Shows or hides the Exit VR button. A headset has no browser chrome to fall back on, so the
+## in-VR panel needs its own way out; the desktop panel keeps it hidden.
+func set_exit_vr_visible(shown: bool) -> void:
+	$VBox/ExitVR.visible = shown

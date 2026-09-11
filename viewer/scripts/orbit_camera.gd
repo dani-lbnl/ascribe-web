@@ -117,3 +117,24 @@ func _zoom_by_factor(factor: float) -> void:
 
 func _sync_transform() -> void:
 	transform = orbit_transform(yaw, pitch, distance, target)
+
+
+## Serializes the current pose as a `?view=` query value: "yaw,pitch,distance" in radians/metres.
+func pose_string() -> String:
+	return "%.4f,%.4f,%.4f" % [yaw, pitch, distance]
+
+
+## Applies a pose produced by `pose_string`. Returns false (leaving the camera untouched) if the
+## value is malformed, so a hand-edited URL can't wedge the view.
+func apply_pose_string(value: String) -> bool:
+	var parts := value.split(",")
+	if parts.size() != 3:
+		return false
+	for part in parts:
+		if not part.strip_edges().is_valid_float():
+			return false
+	yaw = float(parts[0])
+	pitch = clamp_pitch(float(parts[1]))
+	distance = clamp_distance(float(parts[2]))
+	_sync_transform()
+	return true
