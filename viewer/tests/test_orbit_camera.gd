@@ -67,6 +67,105 @@ func test_dragging_down_raises_the_camera() -> void:
 	assert_float(cam.global_transform.origin.y).is_greater(0.0)
 
 
+# Touch support: Godot synthesises neither magnify nor pan gestures on Android or web, so a
+# phone or tablet gets nothing from the trackpad-gesture path -- pinch has to be resolved from
+# raw touch events.
+func _touch(cam: OrbitCamera, index: int, position: Vector2, pressed: bool) -> void:
+	var ev := InputEventScreenTouch.new()
+	ev.index = index
+	ev.position = position
+	ev.pressed = pressed
+	cam._handle_screen_touch(ev)
+
+
+func _drag(cam: OrbitCamera, index: int, position: Vector2, relative := Vector2.ZERO) -> void:
+	var ev := InputEventScreenDrag.new()
+	ev.index = index
+	ev.position = position
+	ev.relative = relative
+	cam._handle_screen_drag(ev)
+
+
+func test_one_finger_drag_orbits() -> void:
+	var cam: OrbitCamera = auto_free(OrbitCamera.new())
+	add_child(cam)
+	var before := cam.yaw
+
+	_touch(cam, 0, Vector2(100, 100), true)
+	_drag(cam, 0, Vector2(120, 100), Vector2(20, 0))
+
+	assert_float(cam.yaw).is_not_equal(before)
+
+
+func test_pinch_apart_zooms_in() -> void:
+	var cam: OrbitCamera = auto_free(OrbitCamera.new())
+	add_child(cam)
+	cam.distance = 2.0
+
+	_touch(cam, 0, Vector2(100, 200), true)
+	_touch(cam, 1, Vector2(200, 200), true)
+	_drag(cam, 0, Vector2(100, 200))          # establishes the baseline separation
+	_drag(cam, 1, Vector2(300, 200))          # fingers now twice as far apart
+
+	assert_float(cam.distance).is_less(2.0)
+
+
+func test_pinch_together_zooms_out() -> void:
+	var cam: OrbitCamera = auto_free(OrbitCamera.new())
+	add_child(cam)
+	cam.distance = 2.0
+
+	_touch(cam, 0, Vector2(100, 200), true)
+	_touch(cam, 1, Vector2(300, 200), true)
+	_drag(cam, 0, Vector2(100, 200))
+	_drag(cam, 1, Vector2(200, 200))          # fingers closer together
+
+	assert_float(cam.distance).is_greater(2.0)
+
+
+func test_two_finger_drag_pans() -> void:
+	var cam: OrbitCamera = auto_free(OrbitCamera.new())
+	add_child(cam)
+	var before := cam.target
+
+	_touch(cam, 0, Vector2(100, 200), true)
+	_touch(cam, 1, Vector2(200, 200), true)
+	_drag(cam, 0, Vector2(100, 200))
+	# Both fingers move together: separation unchanged, centroid shifts -> pan, not zoom.
+	_drag(cam, 0, Vector2(140, 200))
+	_drag(cam, 1, Vector2(240, 200))
+
+	assert_vector(cam.target).is_not_equal(before)
+
+
+func test_two_finger_gesture_does_not_orbit() -> void:
+	var cam: OrbitCamera = auto_free(OrbitCamera.new())
+	add_child(cam)
+	var before := cam.yaw
+
+	_touch(cam, 0, Vector2(100, 200), true)
+	_touch(cam, 1, Vector2(200, 200), true)
+	_drag(cam, 0, Vector2(140, 200), Vector2(40, 0))
+
+	assert_float(cam.yaw).is_equal_approx(before, 0.0001)
+
+
+func test_lifting_to_one_finger_does_not_jump_the_view() -> void:
+	var cam: OrbitCamera = auto_free(OrbitCamera.new())
+	add_child(cam)
+	_touch(cam, 0, Vector2(100, 200), true)
+	_touch(cam, 1, Vector2(300, 200), true)
+	_drag(cam, 0, Vector2(100, 200))
+	_drag(cam, 1, Vector2(300, 200))
+	var distance_before := cam.distance
+
+	_touch(cam, 1, Vector2(300, 200), false)   # second finger lifts
+	_drag(cam, 0, Vector2(110, 200), Vector2(10, 0))
+
+	# The remaining finger orbits; it must not be read as a wild pinch.
+	assert_float(cam.distance).is_equal_approx(distance_before, 0.0001)
+
+
 func test_clamp_distance_within_range_is_unchanged() -> void:
 	assert_float(OrbitCamera.clamp_distance(1.5)).is_equal_approx(1.5, 0.0001)
 

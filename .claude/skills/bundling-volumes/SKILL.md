@@ -1,0 +1,95 @@
+---
+name: bundling-volumes
+description: Use when baking an ascribe-web bundle from a volume file (.npy/.tif), tuning how a volume looks in the viewer, or diagnosing a rendering artifact (banding, moire, fog, a black screen). Covers the ascribe-bundle CLI flags, transfer functions, and the measurement harness.
+---
+
+# Baking and tuning ascribe-web bundles
+
+## Bake
+
+```powershell
+.venv\Scripts\ascribe-bundle build data.tif --story story.md --title "..." `
+    --dtype u8 --max-dim 384 --smooth 1.5 --window 1,99.8 -o out/
+.venv\Scripts\ascribe-bundle inspect out/     # validates and prints the manifest
+```
+
+Flag order of importance for real reconstructions:
+
+- **`--window LOW,HIGH`** (percentiles). Almost always needed. Real tomography packs most voxels
+  into a narrow band with far-out outliers — the ALS sample has 90% of its voxels inside 15 of
+  256 levels — so plain min/max scaling renders as flat fog. `1,99.8` is a good start.
+- **`--smooth SIGMA`** (voxels). The main control over how "striped" a surface looks. Fine
+  layered structure in the data reads as hard banding once a steep transfer function amplifies
+  it. On the ALS sample, 1.5 cuts banding ~75% while keeping ridges legible; 0.6 keeps more
+  texture but bands visibly. Applied after downsampling.
+- **`--max-dim N`** caps the longest axis. Decimation block-averages (an anti-alias prefilter);
+  striding instead would fold fine structure into moire.
+- **`--dtype u8`** halves the payload. Tested against float16 on the ALS sample: no visible
+  difference, including on banding. Prefer u8 unless a specific artifact points at quantization.
+
+## Transfer function
+
+The gradient is **not** settable from the CLI yet — edit `display.gradient` in the baked
+`manifest.json` (a list of `[offset, "#rrggbbaa"]` stops) and `display.gamma`. A rebake
+overwrites it, so keep the edit in a script if you are iterating.
+
+It is the single biggest lever on how a volume reads, and easy to overdo:
+
+- A steep alpha ramp over a narrow density band makes structure pop but amplifies every small
+  density oscillation into hard banding.
+- Flattening the ramp too far makes the whole volume semi-opaque — the image degenerates into
+  uniform fog. **Always look at the render, not just a metric**: a "successful" 80% drop in
+  banding energy was once just the image turning into a brown rectangle.
+- `display.max_steps`/`step_size` in the manifest are overridden at startup by the automatic
+  quality tier (`viewer/scripts/quality.gd`), so setting them there has no effect.
+
+## Preview
+
+```powershell
+.venv\Scripts\ascribe-bundle serve build\web        # sends no-store; use this, not http.server
+```
+
+Then `http://localhost:8060/index.html?bundle=<dir>`. A plain `python -m http.server` sends no
+cache headers, and a browser will happily keep running a stale `index.pck` after a re-export —
+which presents as fixed bugs coming back from the dead.
+
+Note what local preview cannot catch: it does not compress, so encoding bugs (Godot double-
+inflating a gzipped response) only appear on a real static host.
+
+## Publishing
+
+Commit the bundle under `demo/` and stage it in `.github/workflows/pages.yml`; pushing to `main`
+deploys to GitHub Pages. Pages serves HTTPS, which WebXR requires — a headset will not enter VR
+from a plain `http://` LAN server.
+
+## Diagnosing a rendering artifact
+
+Do not tune by eye. `viewer/tools/shader_probe.gd` renders a fixed view so variants are
+comparable:
+
+```powershell
+& "<godot>" --path viewer --quit-after 6000 --fixed-fps 30 --write-movie out\p.png `
+    -s res://tools/shader_probe.gd -- --bundle=http://localhost:8060/<dir> `
+    --view=2.9267,0.4002,0.5811 --param=max_steps:512
+```
+
+Get `--view=` from a real session: press **V** in the viewer and copy the URL it prints to the
+browser console. `--param=name:value` overrides a shader uniform (ints, floats, and
+`true`/`false`).
+
+Then measure with a 2D FFT of a crop inside the artifact and compare peak/period/angle across
+variants. What each result tells you:
+
+| Observation | Meaning |
+|---|---|
+| Changes with `max_steps`/`step_size` | Ray-step sampling noise — raise the quality tier |
+| Invariant to step size, pitch fixed | Not sampling. Look at the data or the transfer function |
+| Sharpens as voxels get finer | Real structure being resolved, not an artifact |
+| Pattern stays put on screen as you orbit | Screen-space render bug |
+| Pattern rotates with the object | It is in the data |
+| Identical in u8 and float16 | Not quantization |
+
+Hypotheses already tested and rejected for the ALS bundle's banding: ray-step aliasing,
+trilinear interpolation (quintic-smoothed texel coordinates made no difference — the flag is
+`smooth_sampling`, off by default), ring artifacts, 8-bit quantization, and transparent-black
+LUT stops. Smoothing the data is what helped. Don't re-run those without new evidence.
