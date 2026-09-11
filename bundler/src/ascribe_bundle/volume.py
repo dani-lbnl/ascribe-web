@@ -102,6 +102,7 @@ def convert_volume(
     """
     if dtype not in ("float16", "uint8"):
         raise ValueError(f"dtype must be float16 or uint8, got {dtype}")
+
     if max_dim is not None and max(arr.shape) > max_dim:
         stride = math.ceil(max(arr.shape) / max_dim)
         arr = block_downsample(arr, stride)

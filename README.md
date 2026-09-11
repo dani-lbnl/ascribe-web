@@ -41,9 +41,12 @@ ascribe-bundle build data.npy --story story.md --title "My Data" -o out/
   `![alt](image.png)`) is supported and converted to BBCode by the viewer at load time.
 - `--max-dim N` downsamples any axis larger than `N` voxels (uniform stride) -- useful for keeping
   bundle size down.
-- `--smooth SIGMA` Gaussian-smooths the volume (sigma in voxels) after downsampling. Downsampled
-  tomography tends to look blocky under the raymarcher; `0.6` takes the hard edges off the voxels
-  without visibly softening real structure. Larger sigmas also push mid-range values up, which can
+- `--smooth SIGMA` Gaussian-smooths the volume (sigma in voxels) after downsampling. This is the
+  main control over how "striped" a raymarched surface looks: fine layered structure in the data
+  (laminations, reconstruction noise) reads as hard banding across a curved surface once a steep
+  transfer function amplifies it. On the ALS sample, sigma 1.5 cuts that banding by ~75% (measured
+  with `viewer/tools/shader_probe.gd`) while keeping ridges and inclusions legible; 0.6 preserves
+  more fine texture but bands noticeably. Larger sigmas also push mid-range values up, which can
   make a volume read as a solid crust under an aggressive transfer function.
 - `--window LOW,HIGH` contrast-windows the volume to that percentile range before casting. Real
   reconstructions often pack 90%+ of their voxels into a narrow intensity band with a few far-out
@@ -112,7 +115,7 @@ reconstruction with:
 ```powershell
 ascribe-bundle build rec20201028_190153_esther-singer_wet2_pipette_z50_YESagar_x00y01_8bitcrop-roi.tif `
   --story demo/singer/story.md --title "Agar column microtomography (ALS 8.3.2)" `
-  --dtype u8 --max-dim 384 --smooth 0.6 --window 1,99.8 -o demo/singer/bundle
+  --dtype u8 --max-dim 384 --smooth 1.5 --window 1,99.8 -o demo/singer/bundle
 ```
 
 Its `manifest.json` `display.gradient` was then hand-tuned to keep the bulk agar transparent and
