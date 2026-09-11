@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import shutil
 import sys
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import numpy as np
@@ -99,6 +101,54 @@ def _percentile_pair(text: str) -> tuple[float, float]:
     return (low, high)
 
 
+class _NoCacheHandler(SimpleHTTPRequestHandler):
+    """Static handler that tells the browser never to reuse a response.
+
+    Godot's web export is a handful of big files (index.pck, index.wasm) fetched by XHR.
+    `python -m http.server` sends no Cache-Control at all, so a browser -- Firefox in
+    particular -- is free to heuristically cache them and keep running a stale build after a
+    re-export. That shows up as fixed bugs mysteriously reappearing, which is a miserable
+    thing to debug during a demo.
+    """
+
+    def end_headers(self) -> None:
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        super().end_headers()
+
+    def log_message(self, fmt: str, *args) -> None:  # quieter than the default stderr spew
+        print("  " + (fmt % args), file=sys.stderr)
+
+
+def make_server(directory: Path, port: int = 8060) -> ThreadingHTTPServer:
+    """Builds (but does not start) a no-cache static server rooted at `directory`.
+
+    Pass `port=0` to let the OS pick a free port; read it back from `server_address`.
+    """
+    handler = functools.partial(_NoCacheHandler, directory=str(directory))
+    return ThreadingHTTPServer(("127.0.0.1", port), handler)
+
+
+def serve(args) -> int:
+    root = Path(args.directory)
+    if not root.is_dir():
+        print(f"error: {root} is not a directory", file=sys.stderr)
+        return 1
+
+    httpd = make_server(root, args.port)
+    port = httpd.server_address[1]
+    print(f"serving {root} at http://localhost:{port}/ (no-store; Ctrl+C to stop)")
+    print(f"  e.g. http://localhost:{port}/index.html?bundle=<bundle-dir>")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("stopped")
+    finally:
+        httpd.server_close()
+    return 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="ascribe-bundle")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -118,6 +168,10 @@ def main(argv=None) -> int:
     b.add_argument("--size-warn-mb", type=float, default=100)
     b.add_argument("-o", "--output", required=True)
     b.set_defaults(func=build)
+    s_ = sub.add_parser("serve", help="serve a directory over HTTP with caching disabled")
+    s_.add_argument("directory", help="directory to serve (usually build/web)")
+    s_.add_argument("--port", type=int, default=8060)
+    s_.set_defaults(func=serve)
     i = sub.add_parser("inspect", help="validate and describe a bundle")
     i.add_argument("bundle")
     i.set_defaults(func=inspect)

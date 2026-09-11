@@ -118,3 +118,60 @@ def test_smooth_flag_is_applied(tmp_path):
 
     assert np.abs(np.diff(voxels(smooth_out), axis=0)).mean() < \
         np.abs(np.diff(voxels(plain_out), axis=0)).mean() / 2
+
+
+def _get(port, path="/index.html"):
+    import urllib.request
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}") as resp:
+        return resp.status, resp.headers, resp.read()
+
+
+def _running_server(tmp_path):
+    import threading
+    from ascribe_bundle.cli import make_server
+
+    httpd = make_server(tmp_path, port=0)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return httpd
+
+
+def test_serve_sends_no_store_headers(tmp_path):
+    (tmp_path / "index.html").write_text("<h1>hi</h1>", encoding="utf-8")
+    httpd = _running_server(tmp_path)
+    try:
+        status, headers, body = _get(httpd.server_address[1])
+        assert status == 200
+        assert body == b"<h1>hi</h1>"
+        # Browsers (Firefox especially) otherwise reuse a cached index.pck/wasm across a
+        # re-export and silently run the old build.
+        assert "no-store" in headers["Cache-Control"]
+        assert headers["Pragma"] == "no-cache"
+        assert headers["Expires"] == "0"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_serve_serves_from_the_requested_directory(tmp_path):
+    site = tmp_path / "site"
+    site.mkdir()
+    (site / "index.html").write_text("served", encoding="utf-8")
+    (tmp_path / "outside.txt").write_text("secret", encoding="utf-8")
+
+    httpd = _running_server(site)
+    try:
+        port = httpd.server_address[1]
+        assert _get(port)[2] == b"served"
+        import urllib.error
+        import pytest
+        with pytest.raises(urllib.error.HTTPError):
+            _get(port, "/outside.txt")
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_serve_rejects_a_missing_directory(tmp_path, capsys):
+    from ascribe_bundle.cli import main
+    assert main(["serve", str(tmp_path / "nope")]) == 1
+    assert "not a directory" in capsys.readouterr().err

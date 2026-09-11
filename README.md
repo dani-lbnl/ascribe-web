@@ -66,9 +66,14 @@ build for offline testing, but to preview a real bundle you need a same-origin H
 viewer never assumes CORS):
 
 ```powershell
-cd build\web
-python -m http.server 8060
+ascribe-bundle serve build\web
 ```
+
+(Use `ascribe-bundle serve`, not `python -m http.server`: the plain server sends no
+`Cache-Control`, so a browser -- Firefox in particular -- will happily keep running a cached
+`index.pck`/`index.wasm` after you re-export, which looks exactly like a bug you already fixed.
+`serve` sends `no-store` on everything. If you do use another static server, hard-reload
+(Ctrl+Shift+R) after every export.)
 
 Then open `http://localhost:8060/index.html?bundle=../../out` (or copy your bundle's `out/`
 directory next to `index.html` first and use a relative `?bundle=` path — see below).
