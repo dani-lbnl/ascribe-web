@@ -83,3 +83,44 @@ def test_window_applies_to_float16_too():
     out = convert_volume(arr, "float16", window=(10.0, 90.0))
     assert float(out.min()) == 0.0
     assert float(out.max()) == 1.0
+
+
+def test_smooth_reduces_high_frequency_noise():
+    rng = np.random.default_rng(0)
+    smooth_field = np.linspace(0.0, 1.0, 16)[:, None, None] * np.ones((16, 16, 16))
+    noisy = (smooth_field + rng.normal(0, 0.1, (16, 16, 16))).astype(np.float32)
+
+    plain = convert_volume(noisy, "float16").astype(np.float32)
+    smoothed = convert_volume(noisy, "float16", smooth=1.0).astype(np.float32)
+
+    # Neighbour-to-neighbour variation along a noisy axis drops after smoothing.
+    assert np.abs(np.diff(smoothed, axis=1)).mean() < np.abs(np.diff(plain, axis=1)).mean() / 2
+
+
+def test_smooth_preserves_overall_level():
+    arr = np.full((8, 8, 8), 5.0, dtype=np.float32)
+    out = convert_volume(arr, "float16", smooth=1.5).astype(np.float32)
+    # A constant volume must stay constant -- the kernel is normalized and edges are handled.
+    assert np.allclose(out, 5.0, atol=1e-2)
+
+
+def test_smooth_zero_or_none_is_a_no_op():
+    arr = np.linspace(0, 1, 512, dtype=np.float32).reshape(8, 8, 8)
+    base = convert_volume(arr, "float16")
+    assert np.array_equal(convert_volume(arr, "float16", smooth=0.0), base)
+    assert np.array_equal(convert_volume(arr, "float16", smooth=None), base)
+
+
+def test_smooth_rejects_negative_sigma():
+    arr = np.ones((4, 4, 4), dtype=np.float32)
+    with pytest.raises(ValueError):
+        convert_volume(arr, "float16", smooth=-1.0)
+
+
+def test_smooth_runs_before_windowing():
+    # A single hot voxel should be spread by smoothing, so the 99.9th percentile window
+    # lands differently than it would on the raw spike.
+    arr = np.zeros((12, 12, 12), dtype=np.float32)
+    arr[6, 6, 6] = 100.0
+    out = convert_volume(arr, "uint8", smooth=1.0, window=(0.0, 100.0))
+    assert (out > 0).sum() > 1  # the spike has neighbours now

@@ -32,7 +32,8 @@ def build(args) -> int:
         arr = convert_volume(load_volume(src),
                              "uint8" if args.dtype == "u8" else "float16",
                              max_dim=args.max_dim,
-                             window=args.window)
+                             window=args.window,
+                             smooth=args.smooth)
         env = volume_envelope(arr)
         spec_type = "volume"
 
@@ -107,6 +108,9 @@ def main(argv=None) -> int:
     b.add_argument("--title", default=None)
     b.add_argument("--dtype", choices=["float16", "u8"], default="float16")
     b.add_argument("--max-dim", type=int, default=None)
+    b.add_argument("--smooth", type=float, default=None, metavar="SIGMA",
+                   help="Gaussian-smooth the volume by SIGMA voxels after downsampling; "
+                        "0.6-1.0 takes the hard edges off blocky voxels")
     b.add_argument("--window", type=_percentile_pair, default=None, metavar="LOW,HIGH",
                    help="contrast-window the volume to this percentile range, e.g. "
                         "'0.5,99.5'; stretches the band the data actually occupies across "

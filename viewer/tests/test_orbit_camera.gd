@@ -1,6 +1,6 @@
 extends GdUnitTestSuite
 
-const PITCH_LIMIT := 1.55334303  # ~89 degrees
+const PITCH_LIMIT := 1.48352986  # ~85 degrees
 
 
 func test_orbit_transform_zero_looks_down_negative_z_from_positive_z() -> void:
@@ -40,6 +40,31 @@ func test_clamp_pitch_clamps_below_negative_limit() -> void:
 	var clamped := OrbitCamera.clamp_pitch(-2.0)
 	assert_float(clamped).is_less(-PITCH_LIMIT + 0.001)
 	assert_float(clamped).is_greater(-PITCH_LIMIT - 0.001)
+
+
+# Regression: PITCH_LIMIT used to be ~89 degrees, but orbit_transform() swaps its up-vector to
+# FORWARD once |dir . UP| > 0.999 to dodge gimbal lock -- and sin(89 deg) = 0.9998 is already
+# past that threshold, so the view snapped through a roll flip at the top and bottom of the
+# orbit. The clamp has to keep the camera on the safe side of the up-vector swap.
+func test_pitch_limit_stays_clear_of_the_up_vector_swap() -> void:
+	var at_limit := OrbitCamera.clamp_pitch(10.0)
+	assert_float(absf(sin(at_limit))).is_less(0.999)
+	var near := OrbitCamera.orbit_transform(0.0, at_limit - 0.02, 1.5, Vector3.ZERO)
+	var at := OrbitCamera.orbit_transform(0.0, at_limit, 1.5, Vector3.ZERO)
+	assert_float(near.basis.y.dot(at.basis.y)).is_greater(0.9)
+
+
+# Regression: dragging the mouse down used to lower the camera, which reads as inverted --
+# pulling down should tilt the specimen's top toward the viewer, i.e. raise the camera.
+func test_dragging_down_raises_the_camera() -> void:
+	var cam: OrbitCamera = auto_free(OrbitCamera.new())
+	add_child(cam)
+	var before := cam.pitch
+
+	cam._orbit(0.0, 20.0)  # positive dy means the mouse moved down
+
+	assert_float(cam.pitch).is_greater(before)
+	assert_float(cam.global_transform.origin.y).is_greater(0.0)
 
 
 func test_clamp_distance_within_range_is_unchanged() -> void:

@@ -95,3 +95,26 @@ def test_window_flag_rejects_bad_range(tmp_path, capsys):
     np.save(src, np.zeros((4, 4, 4), dtype=np.float32))
     with pytest.raises(SystemExit):
         main(["build", str(src), "--window", "99,1", "-o", str(tmp_path / "o")])
+
+
+def test_smooth_flag_is_applied(tmp_path):
+    import numpy as np
+    from ascribe_bundle.cli import main
+    from ascribe_bundle.envelope import read_envelope
+
+    rng = np.random.default_rng(1)
+    arr = rng.normal(0.5, 0.2, (12, 12, 12)).astype(np.float32)
+    src = tmp_path / "v.npy"
+    np.save(src, arr)
+
+    plain_out = tmp_path / "plain"
+    smooth_out = tmp_path / "smooth"
+    assert main(["build", str(src), "-o", str(plain_out)]) == 0
+    assert main(["build", str(src), "--smooth", "1.0", "-o", str(smooth_out)]) == 0
+
+    def voxels(d):
+        _, payload = read_envelope((d / "specimen_0.bin").read_bytes())
+        return np.frombuffer(payload, dtype=np.float16).astype(np.float32).reshape(12, 12, 12)
+
+    assert np.abs(np.diff(voxels(smooth_out), axis=0)).mean() < \
+        np.abs(np.diff(voxels(plain_out), axis=0)).mean() / 2

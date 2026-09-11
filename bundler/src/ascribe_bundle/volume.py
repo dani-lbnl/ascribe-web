@@ -22,11 +22,38 @@ def load_volume(path: Path) -> np.ndarray:
     return arr
 
 
+def gaussian_smooth(arr: np.ndarray, sigma: float) -> np.ndarray:
+    """Separable 3D Gaussian blur, implemented with numpy alone (no scipy dependency).
+
+    Edges are handled by edge-clamping ("nearest") so a constant volume stays constant and
+    the borders don't darken. The kernel is truncated at 3 sigma, which is where the tail is
+    below ~1% of the peak.
+    """
+    if sigma < 0.0:
+        raise ValueError(f"smooth sigma must be >= 0, got {sigma}")
+    if sigma == 0.0:
+        return arr
+
+    radius = max(1, int(math.ceil(3.0 * sigma)))
+    x = np.arange(-radius, radius + 1, dtype=np.float64)
+    kernel = np.exp(-(x ** 2) / (2.0 * sigma ** 2))
+    kernel /= kernel.sum()
+
+    out = arr.astype(np.float64)
+    for axis in range(3):
+        padded = np.pad(out, [(radius, radius) if a == axis else (0, 0) for a in range(3)],
+                        mode="edge")
+        out = np.apply_along_axis(
+            lambda line: np.convolve(line, kernel, mode="valid"), axis, padded)
+    return out
+
+
 def convert_volume(
     arr: np.ndarray,
     dtype: str = "float16",
     max_dim: int | None = None,
     window: tuple[float, float] | None = None,
+    smooth: float | None = None,
 ) -> np.ndarray:
     """Downsample, contrast-window and cast a volume to a web-safe dtype.
 
@@ -37,6 +64,10 @@ def convert_volume(
     few far-out outliers; plain min/max scaling then leaves the interesting structure with
     almost no contrast, so windowing (e.g. `(0.5, 99.5)`) is usually what you want.
 
+    `smooth` is a Gaussian sigma in voxels, applied after downsampling and before windowing.
+    A little smoothing (0.6-1.0) takes the hard edges off blocky voxels without visibly
+    softening real structure; `None` or 0 skips it.
+
     Without `window`, uint8 output is min/max scaled and float16 output is passed through
     with its original values.
     """
@@ -45,6 +76,11 @@ def convert_volume(
     if max_dim is not None and max(arr.shape) > max_dim:
         stride = math.ceil(max(arr.shape) / max_dim)
         arr = arr[::stride, ::stride, ::stride]
+
+    if smooth is not None and smooth > 0.0:
+        arr = gaussian_smooth(arr, smooth)
+    elif smooth is not None and smooth < 0.0:
+        raise ValueError(f"smooth sigma must be >= 0, got {smooth}")
 
     if window is not None:
         low, high = window

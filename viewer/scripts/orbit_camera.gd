@@ -6,7 +6,10 @@ class_name OrbitCamera
 
 const MIN_DISTANCE := 0.2
 const MAX_DISTANCE := 10.0
-const PITCH_LIMIT := 1.55334303  # ~89 degrees, avoids gimbal lock at the poles
+# ~85 degrees. Must stay on the near side of the |dir . UP| > 0.999 up-vector swap in
+# orbit_transform() (~87.4 degrees) -- clamping past it let the view snap through a roll flip at
+# the top and bottom of the orbit.
+const PITCH_LIMIT := 1.48352986
 const ORBIT_SENSITIVITY := 0.01  # rad per pixel
 const PAN_SENSITIVITY := 0.001  # fraction of distance per pixel
 const ZOOM_STEP := 0.1  # fraction of current distance per wheel notch
@@ -85,8 +88,10 @@ func _handle_mouse_motion(event: InputEventMouseMotion) -> void:
 
 
 func _orbit(dx: float, dy: float) -> void:
+	# Drag direction follows the specimen, not the camera: dragging down pulls the top of the
+	# specimen toward the viewer, which means raising the camera (increasing pitch).
 	yaw -= dx * ORBIT_SENSITIVITY
-	pitch = clamp_pitch(pitch - dy * ORBIT_SENSITIVITY)
+	pitch = clamp_pitch(pitch + dy * ORBIT_SENSITIVITY)
 	_sync_transform()
 
 
