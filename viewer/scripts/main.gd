@@ -37,6 +37,7 @@ func _ready() -> void:
 	_loader.load_bundle(_bundle_base_url)
 
 	_wire_panel_textures()
+	$CanvasLayer/AxesGadget.camera = $Camera3D
 	_frame_specimen_for_desktop()
 	_wire_xr_grab()
 	_wire_display_panels()

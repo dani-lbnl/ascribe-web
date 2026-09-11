@@ -136,6 +136,18 @@ Godot 4.6, Compatibility renderer, single-threaded web export (no COOP/COEP head
 the host). A benign segfault after "Saving resource cache" during headless export is expected and
 does not indicate export failure -- check that the export artifacts were actually written/updated.
 
+## The synthetic control bundle
+
+`?bundle=cube` is a solid cube, rotated so no face is parallel to a bounding-box plane, with a
+perfectly uniform interior (standard deviation ~1e-6) and soft two-voxel edges. Because the
+object has no structure of its own, **any pattern visible on its faces comes from the rendering
+pipeline, not from the data** -- which makes it the first thing to load when a real dataset looks
+banded or moire-y. It is generated at deploy time by `demo/gen_cube.py`, so it costs the repo no
+binary.
+
+Transfer functions live in `demo/apply_display.py` as named presets; run it against a baked
+`manifest.json` after every rebake (`ascribe-bundle build` always writes the default gradient).
+
 ## Comparing shader changes
 
 Volume rendering regressions are hard to judge by eye. `viewer/tools/shader_probe.gd` renders a
@@ -146,6 +158,10 @@ fixed close-up of a bundle so two variants can be measured rather than eyeballed
     -s res://tools/shader_probe.gd -- --bundle=http://localhost:8060/singer_bundle `
     --param=max_steps:512 --param=step_size:0.0025
 ```
+
+The viewer also draws a small axes gadget in the bottom-left corner showing how world X/Y/Z
+currently sit relative to the camera, which makes it much easier to say *which* plane an
+artifact lies in.
 
 `--param` pokes a uniform on the staged material, which is the only way to override the startup
 quality tier (it takes precedence over the manifest's `max_steps`/`step_size`).

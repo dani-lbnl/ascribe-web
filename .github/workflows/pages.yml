@@ -64,6 +64,18 @@ jobs:
           test -s build/web/index.wasm
           test -s build/web/index.pck
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Bake the synthetic control bundle
+        run: |
+          set -euo pipefail
+          pip install --quiet ./bundler
+          python demo/gen_cube.py cube.npy
+          ascribe-bundle build cube.npy --dtype u8 -o build/web/cube             --title "Rotated cube (synthetic control)"
+          python demo/apply_display.py build/web/cube/manifest.json --preset dense-structure
+
       - name: Stage bundles next to the viewer
         run: |
           set -euo pipefail

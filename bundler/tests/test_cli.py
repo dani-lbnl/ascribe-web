@@ -175,3 +175,25 @@ def test_serve_rejects_a_missing_directory(tmp_path, capsys):
     from ascribe_bundle.cli import main
     assert main(["serve", str(tmp_path / "nope")]) == 1
     assert "not a directory" in capsys.readouterr().err
+
+
+def test_gen_cube_is_uniform_inside_and_oblique(tmp_path):
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "demo"))
+    import numpy as np
+    from gen_cube import rotated_cube
+
+    vol = rotated_cube(size=64, edge_voxels=2.0)
+
+    # The control is only useful if the interior is genuinely featureless: any pattern seen on
+    # its faces in the viewer must come from rendering, not from the data.
+    assert vol[vol > 0.999].std() < 1e-4
+    assert 0.02 < float((vol > 0.5).mean()) < 0.5
+
+    # ...and no face may be axis-aligned, or the test would not exercise oblique sampling.
+    # A face parallel to a bounding-box plane would make whole slices identical.
+    filled = vol > 0.5
+    for axis in range(3):
+        counts = filled.sum(axis=tuple(i for i in range(3) if i != axis))
+        occupied = counts[counts > 0]
+        assert occupied.min() < occupied.max() * 0.9

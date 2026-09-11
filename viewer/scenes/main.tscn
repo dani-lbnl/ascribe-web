@@ -1,4 +1,4 @@
-[gd_scene load_steps=16 format=3 uid="uid://cvw8p1qskeleton"]
+[gd_scene load_steps=17 format=3 uid="uid://cvw8p1qskeleton"]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://scenes/specimen_stage.tscn" id="2_stage"]
@@ -8,6 +8,7 @@
 [ext_resource type="Script" path="res://scripts/xr_panel_pointer.gd" id="6_pointer"]
 [ext_resource type="PackedScene" path="res://scenes/display_settings_panel.tscn" id="7_panel"]
 [ext_resource type="PackedScene" path="res://scenes/story_panel.tscn" id="8_story"]
+[ext_resource type="Script" path="res://scripts/axes_gadget.gd" id="9_axes"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -117,6 +118,18 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.4, -1.2)
 [node name="ErrorScreen" parent="." instance=ExtResource("3_err")]
 
 [node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="AxesGadget" type="Control" parent="CanvasLayer"]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = -104.0
+offset_right = 104.0
+offset_bottom = -16.0
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("9_axes")
 
 [node name="ProgressBar" type="ProgressBar" parent="CanvasLayer"]
 anchors_preset = 8
