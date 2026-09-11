@@ -117,3 +117,31 @@ func test_eye_offset_is_measured_in_head_space() -> void:
 	assert_float(offset.x).is_equal_approx(0.032, 0.0001)
 	assert_float(offset.y).is_equal_approx(0.0, 0.0001)
 	assert_float(offset.z).is_equal_approx(0.0, 0.0001)
+
+
+# Lateral dither is manifest-driven so it can be compared in a headset without a rebuild.
+func test_lateral_jitter_reaches_the_shader() -> void:
+	var stage: SpecimenStage = auto_free(SpecimenStage.new())
+	add_child(stage)
+	stage.stage("specimen_0", _load_fixture_volume(), {"lateral_jitter": 4.0})
+
+	var mesh_child: MeshInstance3D = null
+	for child in stage.get_children():
+		if child is MeshInstance3D:
+			mesh_child = child
+	var mat: ShaderMaterial = mesh_child.get_surface_override_material(0)
+	assert_float(mat.get_shader_parameter("lateral_jitter")).is_equal_approx(4.0, 0.001)
+
+
+func test_lateral_jitter_defaults_off_when_absent() -> void:
+	var stage: SpecimenStage = auto_free(SpecimenStage.new())
+	add_child(stage)
+	stage.stage("specimen_0", _load_fixture_volume(), {})
+
+	var mesh_child: MeshInstance3D = null
+	for child in stage.get_children():
+		if child is MeshInstance3D:
+			mesh_child = child
+	var mat: ShaderMaterial = mesh_child.get_surface_override_material(0)
+	var value = mat.get_shader_parameter("lateral_jitter")
+	assert_bool(value == null or float(value) == 0.0).is_true()

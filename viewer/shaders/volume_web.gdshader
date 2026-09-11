@@ -54,6 +54,14 @@ uniform bool smooth_sampling = false;
 // this exists to identify the artifact, not to ship enabled.
 uniform bool manual_filter = false;
 
+// Lateral (screen-plane) jitter: nudge each ray sideways by a random sub-voxel amount before
+// it is traced, in units of the march step. This is a different thing from the start jitter
+// below, which only moves samples along the ray. Neighbouring pixels otherwise trace nearly
+// parallel rays whose sample grids are in nearly the same phase relative to a surface, so the
+// phase error varies smoothly across the image and shows up as coherent moire. Offsetting
+// sideways decorrelates that phase between adjacent pixels, trading the pattern for noise.
+uniform float lateral_jitter = 0.0;
+
 // Diagnostic: scale of the per-ray start jitter (1.0 = one full march step, 0.0 = none).
 // With jitter off, sampling-phase error becomes coherent banding instead of fine noise, which
 // distinguishes "sampling position" artifacts from "reconstruction" artifacts.
@@ -220,6 +228,17 @@ vec3 density_normal(vec3 uvw) {
 void fragment() {
 	vec3 ro = eye_pos_local;
 	vec3 rd = normalize(pos_local - eye_pos_local);
+
+	if (lateral_jitter > 0.0) {
+		// Two axes spanning the plane perpendicular to the ray.
+		vec3 up_ref = abs(rd.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+		vec3 tangent = normalize(cross(up_ref, rd));
+		vec3 bitangent = cross(rd, tangent);
+		// Two decorrelated hashes of the pixel coordinate, in [-0.5, 0.5].
+		float h1 = fract(sin(dot(FRAGCOORD.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
+		float h2 = fract(sin(dot(FRAGCOORD.xy, vec2(39.3468, 11.135))) * 24634.6345) - 0.5;
+		ro += (tangent * h1 + bitangent * h2) * step_size * lateral_jitter;
+	}
 
 	// Clip the ray to the staged box. Texture coordinates are normalized by the same extents,
 	// so this one clip also keeps every sample inside [0, 1].

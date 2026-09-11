@@ -54,14 +54,17 @@ def main(argv=None) -> int:
     parser.add_argument("manifest", type=Path)
     parser.add_argument("--preset", choices=sorted(PRESETS), default="dense-structure")
     parser.add_argument("--gamma", type=float, default=1.3)
+    parser.add_argument("--lateral-jitter", type=float, default=None, metavar="STEPS",
+                        help="dither each ray sideways by up to this many march steps; trades "
+                             "coherent moire for per-pixel grain (try 2-4)")
     args = parser.parse_args(argv)
 
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     for specimen in manifest.get("specimens", []):
-        specimen.setdefault("display", {}).update({
-            "gradient": PRESETS[args.preset],
-            "gamma": args.gamma,
-        })
+        display = specimen.setdefault("display", {})
+        display.update({"gradient": PRESETS[args.preset], "gamma": args.gamma})
+        if args.lateral_jitter is not None:
+            display["lateral_jitter"] = args.lateral_jitter
     args.manifest.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(f"applied preset '{args.preset}' (gamma {args.gamma}) to {args.manifest}")
     return 0

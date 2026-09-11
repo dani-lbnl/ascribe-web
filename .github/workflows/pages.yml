@@ -85,6 +85,11 @@ jobs:
           # colour-from-first-hit. No extra data in the repo: these are copies of one bundle.
           cp -r demo/singer/bundle build/web/singer_early
           python demo/apply_display.py build/web/singer_early/manifest.json --preset early-colour
+          # Same volume with the lateral dither on, to compare coherent moire against grain.
+          cp -r demo/singer/bundle build/web/singer_dither
+          python demo/apply_display.py build/web/singer_dither/manifest.json --lateral-jitter 4
+          cp -r build/web/cube build/web/cube_dither
+          python demo/apply_display.py build/web/cube_dither/manifest.json --lateral-jitter 4
           cp -r build/web/cube build/web/cube_flat
           python demo/apply_display.py build/web/cube_flat/manifest.json --preset flat-colour
           # Pages' default Jekyll processing would drop files beginning with an underscore.

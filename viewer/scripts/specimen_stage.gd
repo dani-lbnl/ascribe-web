@@ -105,6 +105,11 @@ func _apply_display_to_material(mat: ShaderMaterial, display: Dictionary) -> voi
 		mat.set_shader_parameter("max_steps", int(display["max_steps"]))
 	if display.has("step_size"):
 		mat.set_shader_parameter("step_size", float(display["step_size"]))
+	# Lateral (screen-plane) dither, in units of the march step. Breaks the coherent moire that
+	# arises because neighbouring rays sample a surface at nearly the same phase, at the cost of
+	# per-pixel grain. 0 disables it.
+	if display.has("lateral_jitter"):
+		mat.set_shader_parameter("lateral_jitter", float(display["lateral_jitter"]))
 
 
 ## Builds a GradientTexture1D from a list of `[offset: float, hex_color: String]` stops (the
