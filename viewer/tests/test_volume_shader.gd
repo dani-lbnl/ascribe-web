@@ -114,10 +114,17 @@ func test_projection_modes_exist_and_default_to_compositing() -> void:
 	assert_str(src).contains("ALBEDO = mapped.rgb * a * color_scalar;")
 
 
-# Transfer-function sub-stepping is a diagnostic, not a default: it reduces step-dependence but
-# costs LUT fetches and does not fix the banding.
-func test_lut_substepping_defaults_off() -> void:
-	assert_str(_source()).contains("uniform int lut_substeps = 1;")
+# On a uniform solid, a ray can saturate while still inside the surface's density ramp, so the
+# pixel takes its colour from the ramp instead of the material behind it -- and where that
+# happens shifts with sub-voxel phase, which is banding. Stopping later, and integrating the
+# transfer function between samples rather than point-sampling it, cut the banding residual on
+# the synthetic cube from 3.43 to 1.60. The two interact: sub-stepping looks useless while the
+# cutoff is still quantising where rays stop, which is why both must stay on.
+func test_saturation_cutoff_and_lut_substepping_are_enabled() -> void:
+	var src := _source()
+	assert_str(src).contains("uniform int lut_substeps = 4;")
+	assert_str(src).contains("uniform float saturation_cutoff = 0.995;")
+	assert_str(src).contains("if (total_opacity >= saturation_cutoff)")
 
 
 # Regression: the saturation early-exit must end the march, not just the sub-step loop, or the
@@ -127,4 +134,6 @@ func test_saturation_breaks_the_march_not_just_the_substep_loop() -> void:
 	var marker := "// Saturated: everything behind this contributes nothing."
 	assert_str(src).contains(marker)
 	var tail := src.substr(src.find(marker))
-	assert_str(tail).contains("if (total_opacity >= 0.95)")
+	assert_str(tail).contains("if (total_opacity >= saturation_cutoff)")
+	# ...and exactly once: an earlier restructure left the check duplicated.
+	assert_int(src.count("if (total_opacity >= saturation_cutoff)")).is_equal(1)

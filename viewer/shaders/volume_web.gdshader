@@ -75,9 +75,21 @@ uniform float jitter_amount = 1.0;
 //
 // Measured: it does reduce the step-dependence (brightness drift from 512 to 4096 steps falls
 // from 2.4% to 1.7%) but it does NOT fix the banding, and face variation on the synthetic cube
-// gets marginally worse (4.90 -> 5.03 -> 5.16 at 1/4/8 substeps). So it ships off; it is here
-// because it identifies the mechanism, not because it earns its cost.
-uniform int lut_substeps = 1;
+// Measured on the synthetic cube, together with a higher saturation_cutoff (the two interact --
+// sub-stepping alone looks useless while the cutoff is quantising where rays stop): banding
+// residual on a uniform face falls from 3.43 to 1.60, a 53% reduction. Costs 3 extra 1D LUT
+// lookups per sample but no extra volume fetches, which are the expensive part.
+uniform int lut_substeps = 4;
+
+// Opacity at which the march gives up: everything behind contributes less than (1 - this).
+// Cutting off early is a performance win but quantises where a ray stops, which for a steep
+// transfer function means the pixel's colour is decided at a sample boundary.
+//
+// 0.95 stops noticeably early: on a solid object the ray can saturate while still inside the
+// surface's density ramp, so the pixel takes its colour from the ramp rather than from the
+// material behind it -- and exactly where that happens shifts with sub-voxel phase, which is
+// banding. 0.995 costs a longer march in dense volumes but removes most of that.
+uniform float saturation_cutoff = 0.995;
 
 // How a ray turns a column of density into a pixel.
 //
@@ -307,10 +319,7 @@ void fragment() {
 
 		// Saturated: everything behind this contributes nothing. Must break the march itself,
 		// not just the sub-step loop, or the ray keeps stepping for no reason.
-		if (total_opacity >= 0.95)
-			break;
-
-		if (total_opacity >= 0.95)
+		if (total_opacity >= saturation_cutoff)
 			break;
 	}
 
