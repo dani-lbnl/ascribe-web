@@ -116,7 +116,15 @@ started at 7.25/255 std under the `dense-structure` preset. Findings so far:
 | flat-colour LUT | 5.72 | colour-from-first-hit is real (-21%) |
 | premultiplied blending fix | 5.28 | double-multiply bug (-27%) |
 
-Two diagnostic uniforms exist for this: `manual_filter` replaces the hardware sampler with a
+**Removing the error beats dithering it.** Ron's lateral (screen-plane) dither does break up the
+coherent moire -- it decorrelates the sampling phase between neighbouring pixels, which the
+along-ray jitter cannot -- but it converts structure into grain rather than removing it
+(coherent -24%, grain +27%). Raising the transfer-function sub-step budget instead removes the
+error at source: at maximum gamma/opacity the residual goes from 2.148 to 0.930 and the fine
+grain from 1.840 to 0.463, with no dither at all. `lateral_jitter` remains available per-bundle
+for content where the sub-stepping cannot keep up.
+
+Diagnostic uniforms: `manual_filter` replaces the hardware sampler with a
 float32 trilinear blend (8 texelFetches), and `jitter_amount` scales the per-ray start jitter
 (0 turns sampling-phase error from noise into coherent banding, which makes it identifiable).
 

@@ -110,6 +110,11 @@ func _apply_display_to_material(mat: ShaderMaterial, display: Dictionary) -> voi
 	# per-pixel grain. 0 disables it.
 	if display.has("lateral_jitter"):
 		mat.set_shader_parameter("lateral_jitter", float(display["lateral_jitter"]))
+	# Transfer-function sub-step budget. Higher removes pixel-scale structure at the cost of
+	# extra 1D LUT lookups on samples that cross a steep part of the LUT; lower it if a headset
+	# cannot hold framerate.
+	if display.has("lut_substeps"):
+		mat.set_shader_parameter("lut_substeps", int(display["lut_substeps"]))
 
 
 ## Builds a GradientTexture1D from a list of `[offset: float, hex_color: String]` stops (the

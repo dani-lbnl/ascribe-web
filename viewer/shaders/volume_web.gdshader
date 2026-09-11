@@ -23,7 +23,7 @@ const int MAX_EXCLUSION_PLANES = 4;
 const float REFERENCE_STEP = 0.005;
 // Upper bound for the transfer-function sub-stepping loop. The loop breaks at `lut_substeps`,
 // but a constant bound keeps the shader friendly to drivers that dislike dynamic loop limits.
-const int MAX_LUT_SUBSTEPS = 16;
+const int MAX_LUT_SUBSTEPS = 64;
 
 uniform int max_steps = 256;
 uniform float step_size = 0.005;
@@ -83,13 +83,18 @@ uniform float jitter_amount = 1.0;
 //
 // Measured: it does reduce the step-dependence (brightness drift from 512 to 4096 steps falls
 // from 2.4% to 1.7%) but it does NOT fix the banding, and face variation on the synthetic cube
-// This is the *maximum* number of sub-steps, used when the density changes by the full range
-// between two samples; the actual count scales with the density delta, so samples in uniform
-// regions cost one lookup. That matters because the artifact converges with sub-step count:
+// This is the sub-step *budget*, scaled by how far the sample moved along the transfer function
+// and capped at MAX_LUT_SUBSTEPS, so samples in uniform material still cost a single lookup and
+// only those crossing a steep part of the LUT spend the budget.
+//
+// Raising the cap from 16 to 64 is what finally removed the pixel-scale structure: at maximum
+// gamma/opacity the residual falls from 2.148 to 0.930, and the fine grain component from 1.840
+// to 0.463 -- with no dithering at all, so nothing is traded for noise. The saturation cutoff
+// makes no further difference once the budget is this high (identical at 0.995 and 0.9999). That matters because the artifact converges with sub-step count:
 // measured on the cube at maximum gamma/opacity, residual structure falls 9.81 -> 4.55 -> 2.73
 // at 1 / 4 / 8 fixed sub-steps. The steeper the transfer function, the more are needed, which
 // is why a fixed count that looked sufficient at default settings was not at extreme ones.
-uniform int lut_substeps = 48;
+uniform int lut_substeps = 192;
 
 // Opacity at which the march gives up: everything behind contributes less than (1 - this).
 // Cutting off early is a performance win but quantises where a ray stops, which for a steep
@@ -225,6 +230,14 @@ vec3 density_normal(vec3 uvw) {
 }
 
 
+// Interleaved gradient noise: a low-discrepancy per-pixel value in [0, 1). Neighbouring pixels
+// get very different values while the pattern stays even over larger areas, which makes it far
+// less visible than a white-noise hash at the same amplitude.
+float interleaved_gradient_noise(vec2 p) {
+	return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
+}
+
+
 void fragment() {
 	vec3 ro = eye_pos_local;
 	vec3 rd = normalize(pos_local - eye_pos_local);
@@ -234,10 +247,21 @@ void fragment() {
 		vec3 up_ref = abs(rd.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
 		vec3 tangent = normalize(cross(up_ref, rd));
 		vec3 bitangent = cross(rd, tangent);
-		// Two decorrelated hashes of the pixel coordinate, in [-0.5, 0.5].
-		float h1 = fract(sin(dot(FRAGCOORD.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
-		float h2 = fract(sin(dot(FRAGCOORD.xy, vec2(39.3468, 11.135))) * 24634.6345) - 0.5;
-		ro += (tangent * h1 + bitangent * h2) * step_size * lateral_jitter;
+
+		// Interleaved gradient noise rather than a sin-hash. A hash is white noise: its energy
+		// is spread over all frequencies, and the low-frequency part is what the eye reads as
+		// clumpy grain. IGN is low-discrepancy -- neighbouring pixels differ strongly while the
+		// pattern stays even at larger scales -- so at equal amplitude it is markedly less
+		// visible. The second sample is offset by the usual IGN decorrelation constant.
+		float n1 = interleaved_gradient_noise(FRAGCOORD.xy);
+		float n2 = interleaved_gradient_noise(FRAGCOORD.xy + vec2(5.588238, 5.588238));
+
+		// Sample a disk rather than a square: a square offset biases toward its corners, which
+		// shows up as directional structure in the grain.
+		float angle = 6.2831853 * n1;
+		float radius = sqrt(n2) * 0.5;
+		vec2 offset = vec2(cos(angle), sin(angle)) * radius;
+		ro += (tangent * offset.x + bitangent * offset.y) * step_size * lateral_jitter;
 	}
 
 	// Clip the ray to the staged box. Texture coordinates are normalized by the same extents,
@@ -267,8 +291,7 @@ void fragment() {
 
 	// Jitter the ray start (interleaved gradient noise) to break up the
 	// banding of fixed-step sampling.
-	float jitter = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))))
-		* jitter_amount;
+	float jitter = interleaved_gradient_noise(FRAGCOORD.xy) * jitter_amount;
 
 	// max_steps * step_size is not guaranteed to span the clipped interval -- the desktop tier
 	// reaches 1.28 but a 1m staged volume's diagonal can be ~1.39, so corner-on views would

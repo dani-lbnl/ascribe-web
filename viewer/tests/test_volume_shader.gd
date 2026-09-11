@@ -29,7 +29,8 @@ func test_shader_does_not_reference_eye_offset() -> void:
 # ray individually.
 func test_ray_start_is_jittered() -> void:
 	var src := _source()
-	assert_str(src).contains("float jitter = fract(52.9829189")
+	assert_str(src).contains("float interleaved_gradient_noise(")
+	assert_str(src).contains("float jitter = interleaved_gradient_noise(FRAGCOORD.xy)")
 	assert_str(src).contains("(float(i) + jitter) * march_step")
 
 
@@ -122,7 +123,8 @@ func test_projection_modes_exist_and_default_to_compositing() -> void:
 # cutoff is still quantising where rays stop, which is why both must stay on.
 func test_saturation_cutoff_and_lut_substepping_are_enabled() -> void:
 	var src := _source()
-	assert_str(src).contains("uniform int lut_substeps = 48;")
+	assert_str(src).contains("uniform int lut_substeps = 192;")
+	assert_str(src).contains("const int MAX_LUT_SUBSTEPS = 64;")
 	# Sub-steps are allocated by how far the sample moved along the transfer function, not by
 	# how far the density moved: with a high gamma a small density change can still cross a
 	# steep part of the LUT, and scaling on raw density measurably under-serves exactly the
