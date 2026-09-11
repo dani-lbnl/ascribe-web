@@ -165,10 +165,24 @@ func _decode_specimen(spec: Dictionary, body: PackedByteArray) -> Variant:
 	return null
 
 
+## Builds an HTTPRequest configured the way every bundle fetch needs it.
+##
+## `accept_gzip` must stay off. On web the browser transparently decompresses a gzipped
+## response before Godot ever sees the body, but HTTPRequest still reads the
+## `Content-Encoding: gzip` header and tries to inflate it a second time -- that fails inside
+## stream_peer_gzip and hands back garbage, which surfaces as "manifest.json: invalid JSON".
+## A local `python -m http.server` never compresses, so this only appears on a real static
+## host; GitHub Pages gzips JSON by default.
+func make_request() -> HTTPRequest:
+	var request := HTTPRequest.new()
+	request.accept_gzip = false
+	return request
+
+
 ## Performs a single HTTPRequest GET, returning {"body": PackedByteArray} on 2xx, or
 ## {"error": String} otherwise. Always relative-safe: the caller passes a same-origin URL.
 func _http_get(url: String) -> Dictionary:
-	var request := HTTPRequest.new()
+	var request := make_request()
 	add_child(request)
 	var start_err := request.request(url)
 	if start_err != OK:

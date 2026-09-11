@@ -78,3 +78,13 @@ func test_load_bundle_res_missing_dir_fails() -> void:
 	assert_that(state["loaded"]).is_false()
 	assert_that(state["failed"]).is_true()
 	assert_that(state["message"]).is_not_equal("")
+
+
+# Regression: with accept_gzip left on, HTTPRequest inflates a response the browser has
+# already decompressed, which fails in stream_peer_gzip and reports "invalid JSON". A local
+# python http.server never gzips, so this only reproduces against a real host like GitHub Pages.
+func test_requests_do_not_ask_godot_to_inflate_gzip() -> void:
+	var loader: BundleLoader = auto_free(BundleLoader.new())
+	add_child(loader)
+	var request: HTTPRequest = auto_free(loader.make_request())
+	assert_bool(request.accept_gzip).is_false()
