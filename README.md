@@ -1,5 +1,11 @@
 # ascribe-web
 
+**Live demo:** <https://ronpandolfi.github.io/ascribe-web/?bundle=singer_bundle>
+(ALS microtomography) and
+<https://ronpandolfi.github.io/ascribe-web/?bundle=demo_bundle> (synthetic gyroid).
+Served over HTTPS, which WebXR requires -- a plain `http://` LAN server will not let a
+headset enter VR.
+
 A browser-based viewer for volumetric and mesh data with accompanying story narratives. The
 **ascribe-web** system combines a WebGL2-compatible Godot viewer with static hosting support,
 allowing scientific volumes and meshes to be explored interactively through a web browser without
@@ -79,6 +85,12 @@ Then open `http://localhost:8060/index.html?bundle=../../out` (or copy your bund
 directory next to `index.html` first and use a relative `?bundle=` path — see below).
 
 ### 4. Deploy
+
+Pushing to `main` builds and publishes the site automatically: `.github/workflows/pages.yml`
+exports the viewer with headless Godot, copies `demo/bundle` and `demo/singer/bundle` next to
+it as `demo_bundle`/`singer_bundle`, and deploys to GitHub Pages. Adding a bundle to the
+published site means committing it under `demo/` and staging it in that workflow.
+
 
 The exported `build/web/` directory is fully static: copy it, plus one or more bundle directories,
 to any static host (GitHub Pages, S3 + CloudFront, an internal file server, `python -m
