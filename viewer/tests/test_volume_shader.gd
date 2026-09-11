@@ -82,3 +82,22 @@ func test_per_eye_origin_uses_view_index() -> void:
 	var src := _source()
 	assert_str(src).contains("uniform vec3 eye_offsets[2];")
 	assert_str(src).contains("vec4(eye_offsets[VIEW_INDEX], 1.0)")
+
+
+# The march accumulates colour already weighted by each sample's opacity, i.e. premultiplied.
+# Writing that to ALBEDO under ordinary alpha blending multiplies by alpha a second time, which
+# darkens every pixel in proportion to its own transparency and amplifies sampling variation
+# into visible banding (measured: -27% face variation on the synthetic cube when fixed).
+func test_output_uses_premultiplied_blending() -> void:
+	var src := _source()
+	assert_str(src).contains("blend_premul_alpha")
+	assert_str(src).contains("ALBEDO = accumulated_color * color_scalar;")
+
+
+# Diagnostic switches used to trace rendering artifacts; they must stay off by default so the
+# shipped render is the cheap path.
+func test_diagnostic_uniforms_default_off() -> void:
+	var src := _source()
+	assert_str(src).contains("uniform bool manual_filter = false;")
+	assert_str(src).contains("uniform bool smooth_sampling = false;")
+	assert_str(src).contains("uniform float jitter_amount = 1.0;")

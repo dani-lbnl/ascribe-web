@@ -15,7 +15,7 @@
 //   from EYE_OFFSET, which cannot be named at all under Godot 4.6's Compatibility (GLES3)
 //   backend without breaking the mono shader variant. See the note in vertex().
 shader_type spatial;
-render_mode unshaded, cull_front;
+render_mode unshaded, cull_front, blend_premul_alpha;
 
 const int MAX_EXCLUSION_PLANES = 4;
 // Opacity is calibrated against this step size; changing step_size only
@@ -42,6 +42,19 @@ uniform vec4[MAX_EXCLUSION_PLANES] exclusion_planes;
 // on the close-up tested so far it made no measurable difference to the banding, so it is not
 // worth the per-sample cost until a view is found where it helps.
 uniform bool smooth_sampling = false;
+
+// Diagnostic: reconstruct the volume with a manual trilinear blend (8 texelFetch + float32
+// lerps) instead of the hardware sampler. Hardware texture filtering interpolates with
+// fixed-point weights -- classically 8 bits of subtexel precision -- so a magnified texture
+// reconstructs as ~256 discrete steps between adjacent texels, which shows up as banding.
+// Doing the blend in the shader runs at full float precision. Costs 8 fetches per sample, so
+// this exists to identify the artifact, not to ship enabled.
+uniform bool manual_filter = false;
+
+// Diagnostic: scale of the per-ray start jitter (1.0 = one full march step, 0.0 = none).
+// With jitter off, sampling-phase error becomes coherent banding instead of fine noise, which
+// distinguishes "sampling position" artifacts from "reconstruction" artifacts.
+uniform float jitter_amount = 1.0;
 
 uniform bool shading_enabled = false;
 // Light direction in object space.
@@ -105,6 +118,33 @@ vec3 quintic_texel_coord(vec3 uvw) {
 }
 
 
+// Trilinear blend done in the shader at full float precision, bypassing the hardware sampler's
+// fixed-point interpolation weights. See the `manual_filter` uniform.
+float sample_volume_manual(vec3 uvw) {
+	vec3 res = vec3(textureSize(texture_volume, 0));
+	vec3 p = uvw * res - 0.5;
+	vec3 base = floor(p);
+	vec3 f = p - base;
+	ivec3 i0 = ivec3(base);
+	ivec3 hi = ivec3(res) - ivec3(1);
+
+	float c000 = texelFetch(texture_volume, clamp(i0 + ivec3(0, 0, 0), ivec3(0), hi), 0).r;
+	float c100 = texelFetch(texture_volume, clamp(i0 + ivec3(1, 0, 0), ivec3(0), hi), 0).r;
+	float c010 = texelFetch(texture_volume, clamp(i0 + ivec3(0, 1, 0), ivec3(0), hi), 0).r;
+	float c110 = texelFetch(texture_volume, clamp(i0 + ivec3(1, 1, 0), ivec3(0), hi), 0).r;
+	float c001 = texelFetch(texture_volume, clamp(i0 + ivec3(0, 0, 1), ivec3(0), hi), 0).r;
+	float c101 = texelFetch(texture_volume, clamp(i0 + ivec3(1, 0, 1), ivec3(0), hi), 0).r;
+	float c011 = texelFetch(texture_volume, clamp(i0 + ivec3(0, 1, 1), ivec3(0), hi), 0).r;
+	float c111 = texelFetch(texture_volume, clamp(i0 + ivec3(1, 1, 1), ivec3(0), hi), 0).r;
+
+	float c00 = mix(c000, c100, f.x);
+	float c10 = mix(c010, c110, f.x);
+	float c01 = mix(c001, c101, f.x);
+	float c11 = mix(c011, c111, f.x);
+	return mix(mix(c00, c10, f.y), mix(c01, c11, f.y), f.z);
+}
+
+
 // Estimate the volume-density normal via central differences, in texture space.
 vec3 density_normal(vec3 uvw) {
 	vec3 eps = 1.0 / vec3(textureSize(texture_volume, 0));
@@ -149,7 +189,8 @@ void fragment() {
 
 	// Jitter the ray start (interleaved gradient noise) to break up the
 	// banding of fixed-step sampling.
-	float jitter = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))));
+	float jitter = fract(52.9829189 * fract(dot(FRAGCOORD.xy, vec2(0.06711056, 0.00583715))))
+		* jitter_amount;
 
 	// max_steps * step_size is not guaranteed to span the clipped interval -- the desktop tier
 	// reaches 1.28 but a 1m staged volume's diagonal can be ~1.39, so corner-on views would
@@ -171,9 +212,10 @@ void fragment() {
 		vec3 ray_pos = ro + rd * t;
 		vec3 tex_sample_pt = (ray_pos / (2.0 * box_extents)) + vec3(0.5);
 
-		float density = texture(texture_volume, smooth_sampling
-			? quintic_texel_coord(tex_sample_pt)
-			: tex_sample_pt).r;
+		vec3 sample_pt = smooth_sampling ? quintic_texel_coord(tex_sample_pt) : tex_sample_pt;
+		float density = manual_filter
+			? sample_volume_manual(sample_pt)
+			: texture(texture_volume, sample_pt).r;
 		vec4 sample = texture(gradient, vec2(pow(density, gamma), 0.5));
 
 		float sample_opacity = 1.0 - pow(1.0 - clamp(sample.a * opacity, 0.0, 1.0), step_ratio);
@@ -193,6 +235,10 @@ void fragment() {
 			break;
 	}
 
+	// The march accumulates colour already weighted by each sample's opacity, so the output is
+	// premultiplied. blend_premul_alpha composites that as `src.rgb + dst * (1 - src.a)`, which
+	// is exactly right; plain alpha blending would multiply by alpha a second time, darkening
+	// everything in proportion to its own transparency and amplifying sampling variation.
 	ALBEDO = accumulated_color * color_scalar;
 	ALPHA = total_opacity;
 }

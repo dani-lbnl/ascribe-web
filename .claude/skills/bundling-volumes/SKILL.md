@@ -103,10 +103,28 @@ variants. What each result tells you:
 | Pattern rotates with the object | It is in the data |
 | Identical in u8 and float16 | Not quantization |
 
-Measured on the synthetic cube (so, renderer-side, no data structure involved): face texture is
-~7/255 std under the `dense-structure` preset. It does **not** improve with more ray steps, is
-identical in u8 and float16, and gets *worse* with `smooth_sampling` (quintic warps an already
-exact linear ramp). Cause not yet identified.
+Measured on the synthetic cube (renderer-side, no data structure involved). Face variation
+started at 7.25/255 std under the `dense-structure` preset. Findings so far:
+
+| Change | Face std | Note |
+|---|---|---|
+| baseline (512 steps) | 7.25 | |
+| 1024 / 4096 steps | 7.46 / 8.16 | no better; and the *mean* drifts darker |
+| float16 instead of u8 | 7.27 | not value quantization |
+| `smooth_sampling` (quintic) | 10.12 | worse — trilinear is already exact on a linear ramp |
+| `manual_filter` (float32 trilinear) | 7.25 | **not** hardware filter precision |
+| flat-colour LUT | 5.72 | colour-from-first-hit is real (-21%) |
+| premultiplied blending fix | 5.28 | double-multiply bug (-27%) |
+
+Two diagnostic uniforms exist for this: `manual_filter` replaces the hardware sampler with a
+float32 trilinear blend (8 texelFetches), and `jitter_amount` scales the per-ray start jitter
+(0 turns sampling-phase error from noise into coherent banding, which makes it identifiable).
+
+The remaining lead is **transfer-function under-resolution**: brightness still drifts with step
+count even with a flat colour (197.6 -> 189.9 from 512 to 4096 steps), which means the LUT is
+being point-sampled between consecutive density samples rather than integrated across them. The
+textbook fix is a pre-integrated transfer function (Engel et al. 2001): precompute a 2D table
+indexed by (front density, back density) instead of evaluating the LUT at a single point.
 
 Hypotheses already tested and rejected for the ALS bundle's banding: ray-step aliasing,
 trilinear interpolation (quintic-smoothed texel coordinates made no difference — the flag is
