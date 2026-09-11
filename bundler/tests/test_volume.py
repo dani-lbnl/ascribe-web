@@ -44,3 +44,42 @@ def test_max_dim_downsamples():
 def test_rejects_bad_dtype():
     with pytest.raises(ValueError, match="float16 or uint8"):
         convert_volume(np.zeros((2, 2, 2)), "float32")
+
+
+def test_window_stretches_percentile_range():
+    # 98% of voxels in a narrow band, 2% outliers -- min/max scaling would crush the band.
+    arr = np.full((10, 10, 10), 100.0, dtype=np.float32)
+    arr.reshape(-1)[:5] = 0.0
+    arr.reshape(-1)[5:10] = 1000.0
+    arr.reshape(-1)[10:500] = 96.0
+    arr.reshape(-1)[500:995] = 104.0
+
+    plain = convert_volume(arr, "uint8")
+    windowed = convert_volume(arr, "uint8", window=(1.0, 99.0))
+
+    # Without windowing the 96..104 band collapses to a couple of levels.
+    assert plain[arr == 104.0].mean() - plain[arr == 96.0].mean() < 10
+    # With windowing it spans most of the 0..255 range.
+    assert windowed[arr == 104.0].mean() - windowed[arr == 96.0].mean() > 100
+
+
+def test_window_clips_outliers_to_endpoints():
+    arr = np.linspace(0.0, 100.0, 1000, dtype=np.float32).reshape(10, 10, 10)
+    out = convert_volume(arr, "uint8", window=(10.0, 90.0))
+    assert out.min() == 0
+    assert out.max() == 255
+    assert (out == 0).sum() >= 100   # bottom decile clipped to black
+    assert (out == 255).sum() >= 100  # top decile clipped to white
+
+
+def test_window_requires_low_below_high():
+    arr = np.ones((2, 2, 2), dtype=np.float32)
+    with pytest.raises(ValueError):
+        convert_volume(arr, "uint8", window=(90.0, 10.0))
+
+
+def test_window_applies_to_float16_too():
+    arr = np.linspace(0.0, 100.0, 1000, dtype=np.float32).reshape(10, 10, 10)
+    out = convert_volume(arr, "float16", window=(10.0, 90.0))
+    assert float(out.min()) == 0.0
+    assert float(out.max()) == 1.0

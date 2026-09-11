@@ -119,9 +119,14 @@ func _apply_quality_tier() -> void:
 	$XROrigin3D/PanelViewport/DisplaySettingsPanel.set_display(tier)
 
 
-## Resolves the bundle base URL: `?bundle=` query param on web, falling back to the fixture
-## bundle when not running on web or the param is missing.
+## Resolves the bundle base URL: `--bundle=<path-or-url>` after `--` on desktop, else the
+## `?bundle=` query param on web, falling back to the fixture bundle when neither is given.
 func _resolve_bundle_url() -> String:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--bundle="):
+			var value := arg.substr("--bundle=".length())
+			if value != "":
+				return value
 	if OS.has_feature("web"):
 		var search: String = JavaScriptBridge.eval("window.location.search", true)
 		if search is String and search != "":

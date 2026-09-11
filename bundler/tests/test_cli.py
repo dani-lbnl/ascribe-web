@@ -64,3 +64,34 @@ def test_build_rejects_story_image_path_escape(tmp_path: Path, capsys):
     assert rc == 1
     assert "escapes bundle" in capsys.readouterr().err
     assert not (out / "leak.png").exists()
+
+
+def test_window_flag_is_applied(tmp_path):
+    import numpy as np
+    from ascribe_bundle.cli import main
+    from ascribe_bundle.envelope import read_envelope
+
+    arr = np.full((8, 8, 8), 100.0, dtype=np.float32)
+    arr.reshape(-1)[0] = 0.0
+    arr.reshape(-1)[1] = 1000.0
+    arr.reshape(-1)[2:250] = 96.0
+    src = tmp_path / "v.npy"
+    np.save(src, arr)
+
+    out = tmp_path / "out"
+    assert main(["build", str(src), "--dtype", "u8", "--window", "1,99",
+                 "-o", str(out)]) == 0
+    _, payload = read_envelope((out / "specimen_0.bin").read_bytes())
+    voxels = np.frombuffer(payload, dtype=np.uint8)
+    assert voxels.max() == 255 and voxels.min() == 0
+
+
+def test_window_flag_rejects_bad_range(tmp_path, capsys):
+    import numpy as np
+    import pytest
+    from ascribe_bundle.cli import main
+
+    src = tmp_path / "v.npy"
+    np.save(src, np.zeros((4, 4, 4), dtype=np.float32))
+    with pytest.raises(SystemExit):
+        main(["build", str(src), "--window", "99,1", "-o", str(tmp_path / "o")])

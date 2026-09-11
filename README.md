@@ -35,6 +35,10 @@ ascribe-bundle build data.npy --story story.md --title "My Data" -o out/
   `![alt](image.png)`) is supported and converted to BBCode by the viewer at load time.
 - `--max-dim N` downsamples any axis larger than `N` voxels (uniform stride) -- useful for keeping
   bundle size down.
+- `--window LOW,HIGH` contrast-windows the volume to that percentile range before casting. Real
+  reconstructions often pack 90%+ of their voxels into a narrow intensity band with a few far-out
+  outliers; plain min/max scaling then leaves the structure with almost no contrast (it renders as
+  flat fog). `--window 1,99.8` is a good starting point -- see the demo bundle recipe below.
 - `--size-warn-mb N` (default 100) prints a warning, not an error, if the baked bundle exceeds it.
 - `-o out/` is the output directory: `manifest.json` + one `.bin` envelope per specimen, plus any
   images referenced by the story, copied alongside.
@@ -43,6 +47,15 @@ Run `ascribe-bundle inspect out/` to validate an existing bundle and print its m
 specimen's decoded envelope header.
 
 ### 3. Preview locally
+
+On the desktop build you can point the viewer straight at a bundle without exporting for web:
+
+```powershell
+& "<path to Godot_v4.6-stable_win64_console.exe>" --path viewer -- --bundle=http://localhost:8060/my_bundle
+```
+
+(Everything after `--` goes to the game; `--bundle=` also accepts a `res://` path.)
+
 
 The viewer's `res://tests/fixtures/tiny_bundle` fixture bundle is baked into the exported web
 build for offline testing, but to preview a real bundle you need a same-origin HTTP server (the
@@ -71,7 +84,21 @@ https://your-host.example/index.html?bundle=demo_bundle
 it falls back to the bundle baked into the exported `.pck` (the test fixture, for a bare desktop
 smoke-test).
 
-This repo ships a demo bundle at `build/web/demo_bundle/` (also kept at `demo/bundle/` alongside
+The repo also ships a bundle baked from real beamline data at `build/web/singer_bundle/` (kept
+at `demo/singer/` with its story). It was produced from an ALS 8.3.2 microtomography
+reconstruction with:
+
+```powershell
+ascribe-bundle build rec20201028_190153_esther-singer_wet2_pipette_z50_YESagar_x00y01_8bitcrop-roi.tif `
+  --story demo/singer/story.md --title "Agar column microtomography (ALS 8.3.2)" `
+  --dtype u8 --max-dim 384 --window 1,99.8 -o demo/singer/bundle
+```
+
+Its `manifest.json` `display.gradient` was then hand-tuned to keep the bulk agar transparent and
+let the dense structure carry the image -- the CLI has no `--gradient` flag yet, so transfer
+functions are edited in the manifest after baking.
+
+This repo also ships a synthetic demo bundle at `build/web/demo_bundle/` (also kept at `demo/bundle/` alongside
 the numpy generator that produced it, `demo/gen_demo_volume.py`, and its story, `demo/story.md`) --
 load it with `?bundle=demo_bundle` against the exported build.
 

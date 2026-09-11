@@ -3,6 +3,8 @@
 // - texture_volume/gradient use filter_linear instead of filter_linear_mipmap (no mipmaps generated; WebGL2 mipmap filtering of a mipless texture is undefined-ish).
 // - removed the stereo debug tint (VIEW_INDEX == VIEW_RIGHT green tint) at the end of fragment().
 // - removed the unused `layers` uniform.
+// - zoom defaults to 1 (was 2, which pushed every sample outside the [0,1] texture range).
+// - dropped the multiview eye-offset adjustment on world_camera (see note in vertex()).
 shader_type spatial;
 render_mode unshaded, cull_front;
 
@@ -10,7 +12,7 @@ const int MAX_EXCLUSION_PLANES = 4;
 
 uniform sampler3D texture_volume : source_color, filter_linear, repeat_disable;
 uniform sampler2D gradient : filter_linear, repeat_disable;
-uniform float zoom = 2;
+uniform float zoom = 1;
 uniform float opacity = 1;
 uniform float gamma = 1;
 uniform float color_scalar = 1;
@@ -33,9 +35,13 @@ varying vec3 world_position;
 
 void vertex() {
     world_position = VERTEX;
+    // Object-space camera position. NOTE: the upstream shader added EYE_OFFSET here for
+    // multiview stereo, but Godot 4.6's Compatibility (GLES3) backend only declares
+    // `eye_offset` in the multiview shader variant, so referencing it breaks compilation of
+    // the mono variant ("undefined variable eye_offset") -- which renders the whole volume
+    // black in a non-XR browser tab. EYE_OFFSET is zero in mono anyway; per-eye offset for
+    // XR needs re-testing on a headset.
     world_camera = (inverse(MODELVIEW_MATRIX) * vec4(0, 0, 0, 1)).xyz; //object space
-    //world_camera = ( CAMERA_MATRIX  * vec4(0, 0, 0, 1)).xyz; //uncomment this to raymarch in world space
-    world_camera += EYE_OFFSET;
 }
 
 // Function to check if a point is outside of an exclusion plane

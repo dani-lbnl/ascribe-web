@@ -11,20 +11,20 @@ const MAX_STEPS := 512
 
 
 func _ready() -> void:
-	$Gamma.min_value = 0.1
-	$Gamma.max_value = 4.0
-	$Gamma.value = 1.0
-	$Gamma.value_changed.connect(func(_v): _emit_changed())
+	$VBox/Gamma.min_value = 0.1
+	$VBox/Gamma.max_value = 4.0
+	$VBox/Gamma.value = 1.0
+	$VBox/Gamma.value_changed.connect(func(_v): _emit_changed())
 
-	$Opacity.min_value = 0.0
-	$Opacity.max_value = 2.0
-	$Opacity.value = 1.0
-	$Opacity.value_changed.connect(func(_v): _emit_changed())
+	$VBox/Opacity.min_value = 0.0
+	$VBox/Opacity.max_value = 2.0
+	$VBox/Opacity.value = 1.0
+	$VBox/Opacity.value_changed.connect(func(_v): _emit_changed())
 
-	$Quality.min_value = MIN_STEPS
-	$Quality.max_value = MAX_STEPS
-	$Quality.value = 128
-	$Quality.value_changed.connect(func(_v): _emit_changed())
+	$VBox/Quality.min_value = MIN_STEPS
+	$VBox/Quality.max_value = MAX_STEPS
+	$VBox/Quality.value = 128
+	$VBox/Quality.value_changed.connect(func(_v): _emit_changed())
 
 
 func _emit_changed() -> void:
@@ -35,10 +35,10 @@ func _emit_changed() -> void:
 ## quality slider via `Quality.step_size_for`, the same lookup `Quality.pick_tier` uses, so the
 ## manual slider and the automatic desktop/mobile/XR tiers never disagree at the same step count.
 func get_display() -> Dictionary:
-	var steps: int = int($Quality.value)
+	var steps: int = int($VBox/Quality.value)
 	return {
-		"gamma": $Gamma.value,
-		"opacity": $Opacity.value,
+		"gamma": $VBox/Gamma.value,
+		"opacity": $VBox/Opacity.value,
 		"max_steps": steps,
 		"step_size": Quality.step_size_for(steps),
 	}
@@ -47,8 +47,8 @@ func get_display() -> Dictionary:
 ## Sets slider positions from a display dictionary without emitting `display_changed`.
 func set_display(display: Dictionary) -> void:
 	if display.has("gamma"):
-		$Gamma.set_value_no_signal(display["gamma"])
+		$VBox/Gamma.set_value_no_signal(display["gamma"])
 	if display.has("opacity"):
-		$Opacity.set_value_no_signal(display["opacity"])
+		$VBox/Opacity.set_value_no_signal(display["opacity"])
 	if display.has("max_steps"):
-		$Quality.set_value_no_signal(display["max_steps"])
+		$VBox/Quality.set_value_no_signal(display["max_steps"])

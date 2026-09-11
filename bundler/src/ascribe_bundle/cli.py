@@ -31,7 +31,8 @@ def build(args) -> int:
     else:
         arr = convert_volume(load_volume(src),
                              "uint8" if args.dtype == "u8" else "float16",
-                             max_dim=args.max_dim)
+                             max_dim=args.max_dim,
+                             window=args.window)
         env = volume_envelope(arr)
         spec_type = "volume"
 
@@ -83,6 +84,20 @@ def inspect(args) -> int:
     return 0
 
 
+def _percentile_pair(text: str) -> tuple[float, float]:
+    parts = text.split(",")
+    if len(parts) != 2:
+        raise argparse.ArgumentTypeError(f"expected LOW,HIGH percentiles, got {text!r}")
+    try:
+        low, high = (float(x) for x in parts)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"percentiles must be numbers, got {text!r}") from None
+    if not 0.0 <= low < high <= 100.0:
+        raise argparse.ArgumentTypeError(
+            f"percentiles must satisfy 0 <= LOW < HIGH <= 100, got {text!r}")
+    return (low, high)
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="ascribe-bundle")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -92,6 +107,10 @@ def main(argv=None) -> int:
     b.add_argument("--title", default=None)
     b.add_argument("--dtype", choices=["float16", "u8"], default="float16")
     b.add_argument("--max-dim", type=int, default=None)
+    b.add_argument("--window", type=_percentile_pair, default=None, metavar="LOW,HIGH",
+                   help="contrast-window the volume to this percentile range, e.g. "
+                        "'0.5,99.5'; stretches the band the data actually occupies across "
+                        "the full output range instead of min/max scaling")
     b.add_argument("--size-warn-mb", type=float, default=100)
     b.add_argument("-o", "--output", required=True)
     b.set_defaults(func=build)
