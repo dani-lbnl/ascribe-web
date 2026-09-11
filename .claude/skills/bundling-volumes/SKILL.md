@@ -33,6 +33,15 @@ The gradient is **not** settable from the CLI yet — edit `display.gradient` in
 `manifest.json` (a list of `[offset, "#rrggbbaa"]` stops) and `display.gamma`. A rebake
 overwrites it, so keep the edit in a script if you are iterating.
 
+**Do not couple colour to the steep part of the alpha ramp.** Front-to-back compositing weights
+the first sample with meaningful alpha by `(1 - 0)`, so that one sample effectively picks the
+pixel's hue — and exactly where it lands varies with sub-voxel geometry. Ramping colour and alpha
+together therefore converts sampling variation into visible *colour* banding. Measured: the ALS
+bundle's banding peak drops ~63% with the `early-colour` preset, and on the synthetic cube the
+R/B ratio swing collapses from 3.8% to 0.2% with a single flat colour. The cost is a paler image,
+so it is a genuine trade-off rather than a free win. `demo/apply_display.py` ships
+`dense-structure`, `early-colour`, `flat-colour` and `full-range` for comparing.
+
 It is the single biggest lever on how a volume reads, and easy to overdo:
 
 - A steep alpha ramp over a narrow density band makes structure pop but amplifies every small

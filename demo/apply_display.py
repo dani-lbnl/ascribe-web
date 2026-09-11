@@ -23,6 +23,23 @@ PRESETS = {
         [0.0, "#00000000"], [0.30, "#00000000"], [0.50, "#4a3a2820"],
         [0.72, "#c99a5ca0"], [0.88, "#ffd9a0e0"], [1.0, "#fffaf0ff"],
     ],
+    # Colour reaches nearly its final value while alpha is still low, so the first sample a ray
+    # commits to is not also the sample that picks the hue. Under front-to-back compositing the
+    # first sample with meaningful alpha is weighted by (1 - 0) and dominates the pixel, so
+    # coupling colour to the steep part of the alpha ramp turns sub-voxel sampling variation
+    # into visible colour banding. Measured on the ALS bundle this cuts the banding peak ~63%
+    # (and on the synthetic cube it collapses the R/B ratio swing from 3.8% to 0.2%), at the
+    # cost of a paler image with less tonal depth.
+    "early-colour": [
+        [0.0, "#c9a87800"], [0.30, "#d8b88800"], [0.50, "#e8c89820"],
+        [0.72, "#f2dcb8a0"], [0.88, "#fdf2e0e0"], [1.0, "#fffaf0ff"],
+    ],
+    # A single colour with only alpha varying: removes the chromatic component entirely. Useful
+    # as a diagnostic -- what is left is opacity variation, not colour.
+    "flat-colour": [
+        [0.0, "#e8c89800"], [0.30, "#e8c89800"], [0.50, "#e8c89820"],
+        [0.72, "#e8c898a0"], [0.88, "#e8c898e0"], [1.0, "#e8c898ff"],
+    ],
     # A gentler ramp across the whole range: less banding, but everything reads as semi-opaque
     # and a volume with a lot of low-density material can end up as fog.
     "full-range": [

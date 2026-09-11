@@ -81,6 +81,12 @@ jobs:
           set -euo pipefail
           cp -r demo/bundle build/web/demo_bundle
           cp -r demo/singer/bundle build/web/singer_bundle
+          # Same volume, different transfer functions, for comparing how much of the banding is
+          # colour-from-first-hit. No extra data in the repo: these are copies of one bundle.
+          cp -r demo/singer/bundle build/web/singer_early
+          python demo/apply_display.py build/web/singer_early/manifest.json --preset early-colour
+          cp -r build/web/cube build/web/cube_flat
+          python demo/apply_display.py build/web/cube_flat/manifest.json --preset flat-colour
           # Pages' default Jekyll processing would drop files beginning with an underscore.
           touch build/web/.nojekyll
           ls -la build/web

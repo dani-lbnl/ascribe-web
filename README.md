@@ -145,6 +145,10 @@ pipeline, not from the data** -- which makes it the first thing to load when a r
 banded or moire-y. It is generated at deploy time by `demo/gen_cube.py`, so it costs the repo no
 binary.
 
+`?bundle=cube_flat` is the same cube with a single flat colour, and `?bundle=singer_early` is the
+ALS volume with colour decoupled from the alpha ramp -- both for isolating how much of a banding
+artifact is colour-from-first-hit rather than opacity variation.
+
 Transfer functions live in `demo/apply_display.py` as named presets; run it against a baked
 `manifest.json` after every rebake (`ascribe-bundle build` always writes the default gradient).
 
