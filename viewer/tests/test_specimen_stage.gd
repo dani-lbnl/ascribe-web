@@ -133,7 +133,9 @@ func test_lateral_jitter_reaches_the_shader() -> void:
 	assert_float(mat.get_shader_parameter("lateral_jitter")).is_equal_approx(4.0, 0.001)
 
 
-func test_lateral_jitter_defaults_off_when_absent() -> void:
+# A manifest that says nothing about the dither leaves the shader's own default in force (it is
+# on), rather than the stage forcing a value -- so the default can be changed in one place.
+func test_absent_lateral_jitter_leaves_the_shader_default() -> void:
 	var stage: SpecimenStage = auto_free(SpecimenStage.new())
 	add_child(stage)
 	stage.stage("specimen_0", _load_fixture_volume(), {})
@@ -143,5 +145,18 @@ func test_lateral_jitter_defaults_off_when_absent() -> void:
 		if child is MeshInstance3D:
 			mesh_child = child
 	var mat: ShaderMaterial = mesh_child.get_surface_override_material(0)
-	var value = mat.get_shader_parameter("lateral_jitter")
-	assert_bool(value == null or float(value) == 0.0).is_true()
+	assert_that(mat.get_shader_parameter("lateral_jitter")).is_null()
+
+
+# ...and a manifest can still turn it off explicitly, for content where grain is not worth it.
+func test_lateral_jitter_can_be_disabled_by_the_manifest() -> void:
+	var stage: SpecimenStage = auto_free(SpecimenStage.new())
+	add_child(stage)
+	stage.stage("specimen_0", _load_fixture_volume(), {"lateral_jitter": 0.0})
+
+	var mesh_child: MeshInstance3D = null
+	for child in stage.get_children():
+		if child is MeshInstance3D:
+			mesh_child = child
+	var mat: ShaderMaterial = mesh_child.get_surface_override_material(0)
+	assert_float(mat.get_shader_parameter("lateral_jitter")).is_equal_approx(0.0, 0.001)

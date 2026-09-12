@@ -145,3 +145,9 @@ func test_saturation_breaks_the_march_not_just_the_substep_loop() -> void:
 	assert_str(tail).contains("if (total_opacity >= saturation_cutoff)")
 	# ...and exactly once: an earlier restructure left the check duplicated.
 	assert_int(src.count("if (total_opacity >= saturation_cutoff)")).is_equal(1)
+
+
+# The lateral dither ships on: it removes the coherent moire outright rather than reducing it.
+# A manifest can still set display.lateral_jitter to 0 where the grain is not worth it.
+func test_lateral_dither_is_on_by_default() -> void:
+	assert_str(_source()).contains("uniform float lateral_jitter = 4.0;")

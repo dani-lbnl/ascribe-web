@@ -60,7 +60,13 @@ uniform bool manual_filter = false;
 // parallel rays whose sample grids are in nearly the same phase relative to a surface, so the
 // phase error varies smoothly across the image and shows up as coherent moire. Offsetting
 // sideways decorrelates that phase between adjacent pixels, trading the pattern for noise.
-uniform float lateral_jitter = 0.0;
+//
+// On by default: it is the one thing that removes the coherent moire outright rather than
+// reducing it, and a specimen that reads cleanly matters more than the grain it costs. Note the
+// trade -- dithering is what makes the quality setting matter, since more steps means less
+// per-ray error to scatter (grain 10.7 / 7.0 / 4.3 at 128 / 512 / 2048 steps). Set
+// `display.lateral_jitter` to 0 in a manifest for content where the grain is not worth it.
+uniform float lateral_jitter = 4.0;
 
 // Diagnostic: scale of the per-ray start jitter (1.0 = one full march step, 0.0 = none).
 // With jitter off, sampling-phase error becomes coherent banding instead of fine noise, which

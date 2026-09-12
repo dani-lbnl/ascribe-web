@@ -102,6 +102,10 @@ it as `demo_bundle`/`singer_bundle`, and deploys to GitHub Pages. Adding a bundl
 published site means committing it under `demo/` and staging it in that workflow.
 
 
+Re-export before previewing locally: `build/web/` is a build artifact, and a stale one will not
+show features added since it was made (the deploy workflow exports its own copy, so CI being
+green says nothing about what is sitting in your local `build/web`).
+
 The exported `build/web/` directory is fully static: copy it, plus one or more bundle directories,
 to any static host (GitHub Pages, S3 + CloudFront, an internal file server, `python -m
 http.server` for a LAN demo, etc.) preserving relative paths. Load a specific bundle with the

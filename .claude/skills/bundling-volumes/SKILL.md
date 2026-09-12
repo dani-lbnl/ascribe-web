@@ -67,6 +67,11 @@ It is the single biggest lever on how a volume reads, and easy to overdo:
 ascribe-bundle serve build\web --edit
 ```
 
+**Re-export the viewer first** (`godot --headless --path viewer --export-release Web
+../build/web/index.html`). `build/web` is a build artifact that CI never writes back, so a local
+preview silently runs whatever was last exported by hand -- a missing button here usually means a
+stale `.pck`, not a broken feature.
+
 Open `...?bundle=<dir>&edit=1`, frame the specimen, set the sliders, press **Save view +
 settings**. The viewer POSTs the manifest back to the server, which validates and rewrites it;
 the gradient, story and specimen ids pass through untouched. A saved `view` becomes the bundle's
