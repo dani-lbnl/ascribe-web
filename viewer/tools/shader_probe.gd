@@ -40,6 +40,10 @@ func _init() -> void:
 		push_error("probe: no OrbitCamera in main scene")
 		quit(1)
 		return
+	# Report the pose the viewer itself arrived at (from --view= or the manifest's saved view)
+	# before overriding it, so the loaded framing can be verified.
+	print("probe: loaded pose ", cam.pose_string())
+
 	# main.gd already applies any --view=; only fall back to the default close-up when none
 	# was given, so a pose captured from a real session reproduces exactly.
 	var has_view := false
@@ -76,4 +80,12 @@ func _init() -> void:
 			print("probe: set ", name, " = ", value)
 	for i in range(60):
 		await process_frame
+
+	# --save exercises edit mode's write-back path (needs `ascribe-bundle serve --edit`).
+	for arg in OS.get_cmdline_user_args():
+		if arg == "--save":
+			print("probe: saving settings")
+			await main._save_bundle_settings()
+			for i in range(30):
+				await process_frame
 	quit()

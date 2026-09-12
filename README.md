@@ -48,6 +48,13 @@ ascribe-bundle build data.npy --story story.md --title "My Data" -o out/
   with `viewer/tools/shader_probe.gd`) while keeping ridges and inclusions legible; 0.6 preserves
   more fine texture but bands noticeably. Larger sigmas also push mid-range values up, which can
   make a volume read as a solid crust under an aggressive transfer function.
+- `--colormap NAME` uses a perceptual colormap as the transfer function: `viridis`, `magma`,
+  `inferno`, `plasma`, `cividis`, `turbo`, `jet`, `mako`, `rocket`, `flare`, `crest`, `icefire`
+  or `gray`. The low end fades to transparent -- volume rendering needs that, or only the outer
+  shell is ever visible -- and the transparent padding carries the colormap's own lowest colour
+  rather than black, since the gradient is interpolated in straight alpha and a black stop drags
+  everything blending toward it. `--colormap-alpha LO,HI` (default `0.15,0.5`) sets where that
+  fade starts and finishes.
 - `--window LOW,HIGH` contrast-windows the volume to that percentile range before casting. Real
   reconstructions often pack 90%+ of their voxels into a narrow intensity band with a few far-out
   outliers; plain min/max scaling then leaves the structure with almost no contrast (it renders as
@@ -151,6 +158,24 @@ artifact is colour-from-first-hit rather than opacity variation.
 
 Transfer functions live in `demo/apply_display.py` as named presets; run it against a baked
 `manifest.json` after every rebake (`ascribe-bundle build` always writes the default gradient).
+
+## Authoring a bundle's presentation (edit mode)
+
+Transfer functions, framing and display settings otherwise have to be hand-edited into
+`manifest.json` after every rebake. Edit mode does it from the viewer:
+
+```powershell
+ascribe-bundle serve build\web --edit
+```
+
+then open `http://localhost:8060/index.html?bundle=<dir>&edit=1`. Frame the specimen, set the
+sliders, and press **Save view + settings**. The viewer POSTs the updated manifest back to the
+server, which validates it and replaces the file; anything the panel does not control (the
+gradient, the story, specimen ids) is carried through untouched. A saved `view` becomes the
+bundle's default framing, which an explicit `?view=` still overrides.
+
+Saving is refused unless `--edit` was passed, and the button is hidden without `&edit=1`, so a
+deployed bundle never offers an action that cannot work.
 
 ## Comparing shader changes
 

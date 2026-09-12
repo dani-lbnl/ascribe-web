@@ -18,8 +18,8 @@ func test_ready_wires_sliders_and_reports_defaults() -> void:
 	var display := panel.get_display()
 	assert_that(display["gamma"]).is_equal(1.0)
 	assert_that(display["opacity"]).is_equal(1.0)
-	assert_that(display["max_steps"]).is_equal(128)
-	assert_that(display["step_size"]).is_equal(Quality.step_size_for(128))
+	assert_that(display["max_steps"]).is_equal(Quality.DESKTOP_STEPS)
+	assert_that(display["step_size"]).is_equal(Quality.step_size_for(Quality.DESKTOP_STEPS))
 
 
 func test_moving_a_slider_emits_display_changed() -> void:
@@ -39,10 +39,10 @@ func test_set_display_moves_sliders_without_emitting() -> void:
 	var seen: Array[Dictionary] = []
 	panel.display_changed.connect(func(d: Dictionary): seen.append(d))
 
-	panel.set_display({"gamma": 1.7, "opacity": 0.4, "max_steps": 256})
+	panel.set_display({"gamma": 1.7, "opacity": 0.4, "max_steps": 768})
 
 	var display := panel.get_display()
 	assert_float(display["gamma"]).is_equal_approx(1.7, 0.001)
 	assert_float(display["opacity"]).is_equal_approx(0.4, 0.001)
-	assert_that(display["max_steps"]).is_equal(256)
+	assert_that(display["max_steps"]).is_equal(768)
 	assert_that(seen).is_empty()

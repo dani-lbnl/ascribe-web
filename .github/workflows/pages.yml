@@ -86,6 +86,9 @@ jobs:
           cp -r demo/singer/bundle build/web/singer_early
           python demo/apply_display.py build/web/singer_early/manifest.json --preset early-colour
           # Same volume with the lateral dither on, to compare coherent moire against grain.
+          # A colormapped variant, to show what the named colormaps look like on real data.
+          cp -r demo/singer/bundle build/web/singer_viridis
+          python demo/apply_display.py build/web/singer_viridis/manifest.json --colormap viridis
           cp -r demo/singer/bundle build/web/singer_dither
           python demo/apply_display.py build/web/singer_dither/manifest.json --lateral-jitter 4
           cp -r build/web/cube build/web/cube_dither

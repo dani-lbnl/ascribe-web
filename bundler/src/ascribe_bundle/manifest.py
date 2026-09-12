@@ -31,6 +31,10 @@ SCHEMA = {
                 },
             },
         },
+        # Optional default camera framing, as "yaw,pitch,distance" (radians, radians, metres)
+        # -- the same spelling the viewer's `?view=` parameter and its edit mode use, so a view
+        # can be shared as a URL and then saved into the bundle as its default.
+        "view": {"type": "string", "pattern": r"^-?\d*\.?\d+,-?\d*\.?\d+,-?\d*\.?\d+$"},
         "story": {
             "type": "array",
             "items": {

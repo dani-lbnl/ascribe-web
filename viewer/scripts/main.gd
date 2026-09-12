@@ -160,6 +160,12 @@ func _wire_display_panels() -> void:
 	vr_panel.set_exit_vr_visible(true)
 	vr_panel.exit_vr_requested.connect(_exit_vr)
 
+	# Edit mode is a local authoring affordance: it needs `ascribe-bundle serve --edit` behind
+	# it, so it is opt-in via ?edit=1 and never offered for a bundle loaded from elsewhere.
+	var desktop_panel: DisplaySettingsPanel = $CanvasLayer/DisplaySettingsPanel
+	desktop_panel.set_edit_enabled(_edit_enabled())
+	desktop_panel.save_requested.connect(_save_bundle_settings)
+
 
 ## Connects both the desktop and in-VR story panels: on page navigation that pins a different
 ## specimen than the one currently staged, stage it.
@@ -217,6 +223,67 @@ func _process(_delta: float) -> void:
 		SpecimenStage.eye_offset_in_view_space(head, right))
 
 
+## True when the viewer was asked for edit mode (`?edit=1` on web, `--edit` on desktop).
+##
+## The save itself goes to the local server, which only accepts it when started with
+## `ascribe-bundle serve --edit`; this flag just decides whether to offer the button.
+func _edit_enabled() -> bool:
+	for arg in OS.get_cmdline_user_args():
+		if arg == "--edit":
+			return true
+	if OS.has_feature("web"):
+		var search: String = JavaScriptBridge.eval("window.location.search", true)
+		if search is String and search != "":
+			for pair in (search as String).trim_prefix("?").split("&"):
+				if pair == "edit=1":
+					return true
+	return false
+
+
+## Writes the current view and display settings back into the bundle's manifest.
+##
+## The browser cannot write files, so this POSTs the updated manifest to the local server, which
+## validates it and replaces the file. Anything the panel does not control -- the gradient, the
+## story, specimen ids -- is carried through untouched rather than regenerated, so saving a view
+## never quietly discards a hand-tuned transfer function.
+func _save_bundle_settings() -> void:
+	if _manifest.is_empty():
+		return
+	var panel: DisplaySettingsPanel = $CanvasLayer/DisplaySettingsPanel
+	var updated := _manifest.duplicate(true)
+	updated["view"] = ($Camera3D as OrbitCamera).pose_string()
+
+	var display: Dictionary = panel.get_display()
+	for specimen in updated.get("specimens", []):
+		if specimen.get("id", "") == $SpecimenStage.current_id:
+			var existing: Dictionary = specimen.get("display", {})
+			for key in display:
+				existing[key] = display[key]
+			specimen["display"] = existing
+
+	var url := _bundle_base_url.rstrip("/") + "/manifest.json"
+	var request := _loader.make_request()
+	add_child(request)
+	var body := JSON.stringify(updated, "  ")
+	var err := request.request(url, ["Content-Type: application/json"],
+		HTTPClient.METHOD_POST, body)
+	if err != OK:
+		panel.set_save_status("Save failed (request error %d)" % [err])
+		request.queue_free()
+		return
+
+	var result: Array = await request.request_completed
+	request.queue_free()
+	var code: int = result[1]
+	if code == 200:
+		_manifest = updated
+		panel.set_save_status("Saved")
+	elif code == 403:
+		panel.set_save_status("Saving disabled -- serve with --edit")
+	else:
+		panel.set_save_status("Save failed (HTTP %d)" % [code])
+
+
 ## Resolves the bundle base URL: `--bundle=<path-or-url>` after `--` on desktop, else the
 ## `?bundle=` query param on web, falling back to the fixture bundle when neither is given.
 func _resolve_bundle_url() -> String:
@@ -260,6 +327,14 @@ func _on_loaded(manifest: Dictionary, specimens: Dictionary) -> void:
 	_specimens = specimens
 	$CanvasLayer/ProgressBar.visible = false
 
+	# A bundle can carry its own default framing (saved by edit mode). An explicit --view=/?view=
+	# still wins, so a shared link always shows what it promised.
+	var requested_view := _resolve_view_value()
+	var saved_view: String = str(manifest.get("view", ""))
+	if requested_view == "" and saved_view != "":
+		if not ($Camera3D as OrbitCamera).apply_pose_string(saved_view):
+			push_warning("bundle has a malformed view '%s'" % [saved_view])
+
 	var spec_list: Array = manifest.get("specimens", [])
 	if spec_list.is_empty():
 		$ErrorScreen.show_error("Bundle '%s' has no specimens" % [manifest.get("title", "")])
@@ -272,7 +347,13 @@ func _on_loaded(manifest: Dictionary, specimens: Dictionary) -> void:
 		$ErrorScreen.show_error("Specimen '%s' failed to decode" % [spec_id])
 		return
 
-	$SpecimenStage.stage(spec_id, data, first_spec.get("display", {}))
+	var spec_display: Dictionary = first_spec.get("display", {})
+	$SpecimenStage.stage(spec_id, data, spec_display)
+	# Show the bundle's own gamma/opacity on the panels. Without this the sliders sit at their
+	# defaults while the render uses the manifest's values -- the panel lies about the current
+	# state, and in edit mode saving would write the slider defaults over a tuned manifest.
+	$CanvasLayer/DisplaySettingsPanel.set_display(spec_display)
+	$XROrigin3D/PanelViewport/DisplaySettingsPanel.set_display(spec_display)
 	_apply_quality_tier()
 
 	var story: Array = manifest.get("story", [])

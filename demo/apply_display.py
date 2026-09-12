@@ -12,7 +12,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bundler" / "src"))
+from ascribe_bundle.colormaps import gradient_stops, list_colormaps  # noqa: E402
 
 # Named transfer functions. A stop is [offset, "#rrggbbaa"].
 PRESETS = {
@@ -53,6 +57,10 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("manifest", type=Path)
     parser.add_argument("--preset", choices=sorted(PRESETS), default="dense-structure")
+    parser.add_argument("--colormap", choices=list_colormaps(), default=None,
+                        help="use a named colormap instead of a preset")
+    parser.add_argument("--colormap-alpha", type=float, nargs=2, default=(0.15, 0.5),
+                        metavar=("LO", "HI"))
     parser.add_argument("--gamma", type=float, default=1.3)
     parser.add_argument("--lateral-jitter", type=float, default=None, metavar="STEPS",
                         help="dither each ray sideways by up to this many march steps; trades "
@@ -62,11 +70,14 @@ def main(argv=None) -> int:
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     for specimen in manifest.get("specimens", []):
         display = specimen.setdefault("display", {})
-        display.update({"gradient": PRESETS[args.preset], "gamma": args.gamma})
+        gradient = (gradient_stops(args.colormap, *args.colormap_alpha)
+                    if args.colormap else PRESETS[args.preset])
+        display.update({"gradient": gradient, "gamma": args.gamma})
         if args.lateral_jitter is not None:
             display["lateral_jitter"] = args.lateral_jitter
     args.manifest.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    print(f"applied preset '{args.preset}' (gamma {args.gamma}) to {args.manifest}")
+    which = f"colormap '{args.colormap}'" if args.colormap else f"preset '{args.preset}'"
+    print(f"applied {which} (gamma {args.gamma}) to {args.manifest}")
     return 0
 
 

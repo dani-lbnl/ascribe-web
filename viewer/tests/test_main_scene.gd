@@ -69,3 +69,26 @@ func test_exit_button_emits_exit_vr_requested() -> void:
 	panel.get_node("VBox/ExitVR").pressed.emit()
 
 	assert_bool(seen[0]).is_true()
+
+
+# Regression: the panels used to stay at their slider defaults while the render used the
+# manifest's gamma/opacity, so the panel misreported the current state -- and in edit mode
+# saving wrote those defaults over a tuned manifest.
+func test_panels_show_the_bundles_display_settings() -> void:
+	var main := await _make_main()
+	var panel: DisplaySettingsPanel = main.get_node("CanvasLayer/DisplaySettingsPanel")
+
+	panel.set_display({"gamma": 1.3, "opacity": 0.7})
+
+	var shown := panel.get_display()
+	assert_float(shown["gamma"]).is_equal_approx(1.3, 0.001)
+	assert_float(shown["opacity"]).is_equal_approx(0.7, 0.001)
+
+
+# Edit mode must never be offered unless it was explicitly asked for: the Save button only
+# works behind `ascribe-bundle serve --edit`, so showing it on a deployed bundle would mislead.
+func test_edit_mode_is_off_by_default() -> void:
+	var main := await _make_main()
+	var save_button: Button = main.get_node(
+		"CanvasLayer/DisplaySettingsPanel/VBox/Save")
+	assert_bool(save_button.visible).is_false()

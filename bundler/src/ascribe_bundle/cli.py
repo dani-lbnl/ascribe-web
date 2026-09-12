@@ -11,6 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .colormaps import gradient_stops, list_colormaps
 from .envelope import read_envelope, volume_envelope
 from .manifest import DEFAULT_GRADIENT, make_manifest, validate_manifest
 from .story import parse_story
@@ -59,8 +60,12 @@ def build(args) -> int:
             dest_img.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(src_img, dest_img)
 
+    gradient = DEFAULT_GRADIENT
+    if args.colormap:
+        lo, hi = args.colormap_alpha
+        gradient = gradient_stops(args.colormap, alpha_lo=lo, alpha_hi=hi)
     specimen = {"id": "specimen_0", "type": spec_type, "data": data_name,
-                "display": {"gamma": 1.0, "opacity": 1.0, "gradient": DEFAULT_GRADIENT}}
+                "display": {"gamma": args.gamma, "opacity": 1.0, "gradient": gradient}}
     for page in pages:
         if page["specimen"] is None:
             page["specimen"] = "specimen_0"
@@ -87,6 +92,20 @@ def inspect(args) -> int:
     return 0
 
 
+def _alpha_pair(text: str) -> tuple[float, float]:
+    parts = text.split(",")
+    if len(parts) != 2:
+        raise argparse.ArgumentTypeError(f"expected LO,HI fractions, got {text!r}")
+    try:
+        lo, hi = (float(x) for x in parts)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"alpha bounds must be numbers, got {text!r}") from None
+    if not 0.0 <= lo <= hi <= 1.0:
+        raise argparse.ArgumentTypeError(
+            f"alpha bounds must satisfy 0 <= LO <= HI <= 1, got {text!r}")
+    return (lo, hi)
+
+
 def _percentile_pair(text: str) -> tuple[float, float]:
     parts = text.split(",")
     if len(parts) != 2:
@@ -101,7 +120,7 @@ def _percentile_pair(text: str) -> tuple[float, float]:
     return (low, high)
 
 
-class _NoCacheHandler(SimpleHTTPRequestHandler):
+class _EditingHandler(SimpleHTTPRequestHandler):
     """Static handler that tells the browser never to reuse a response.
 
     Godot's web export is a handful of big files (index.pck, index.wasm) fetched by XHR.
@@ -120,14 +139,79 @@ class _NoCacheHandler(SimpleHTTPRequestHandler):
     def log_message(self, fmt: str, *args) -> None:  # quieter than the default stderr spew
         print("  " + (fmt % args), file=sys.stderr)
 
+    def do_POST(self) -> None:  # noqa: N802 (BaseHTTPRequestHandler naming)
+        """Save an edited manifest back into the bundle.
 
-def make_server(directory: Path, port: int = 8060) -> ThreadingHTTPServer:
+        The viewer has no way to write files itself -- a browser cannot, even from localhost --
+        so authoring tools that let someone pose a specimen and tune its display need somewhere
+        to send the result. This accepts a manifest for a bundle under the served directory and
+        writes it, which is why it is off unless `serve --edit` asked for it.
+        """
+        if not self.server.allow_save:
+            self._reply(403, {"error": "saving is disabled; restart with: "
+                                       "ascribe-bundle serve <dir> --edit"})
+            return
+
+        target = self._resolve_manifest_path()
+        if target is None:
+            self._reply(404, {"error": "only <bundle>/manifest.json can be saved"})
+            return
+
+        length = int(self.headers.get("Content-Length", 0))
+        try:
+            manifest = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            self._reply(400, {"error": f"body is not valid JSON: {exc}"})
+            return
+
+        try:
+            validate_manifest(manifest)
+        except ValueError as exc:
+            self._reply(400, {"error": str(exc)})
+            return
+
+        # Write via a temporary file in the same directory, so an interrupted save cannot leave
+        # a half-written manifest where a valid one used to be.
+        tmp = target.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        tmp.replace(target)
+        self._reply(200, {"saved": str(target.name)})
+
+    def _resolve_manifest_path(self) -> Path | None:
+        """The manifest this request targets, or None if it is not one we may write."""
+        path = self.path.split("?", 1)[0]
+        if not path.endswith("/manifest.json"):
+            return None
+        root = Path(self.directory).resolve()
+        candidate = (root / path.lstrip("/")).resolve()
+        # Reject anything that escapes the served directory, however it was spelled.
+        if not candidate.is_relative_to(root) or not candidate.parent.is_dir():
+            return None
+        return candidate
+
+    def _reply(self, status: int, payload: dict) -> None:
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+def make_server(directory: Path, port: int = 8060,
+                allow_save: bool = False) -> ThreadingHTTPServer:
     """Builds (but does not start) a no-cache static server rooted at `directory`.
+
+    With `allow_save`, a POST to `<bundle>/manifest.json` writes that manifest back to disk --
+    the escape hatch the viewer's edit mode needs, since a browser cannot write files itself.
+    It stays off by default: serving a directory should not imply letting anything modify it.
 
     Pass `port=0` to let the OS pick a free port; read it back from `server_address`.
     """
-    handler = functools.partial(_NoCacheHandler, directory=str(directory))
-    return ThreadingHTTPServer(("127.0.0.1", port), handler)
+    handler = functools.partial(_EditingHandler, directory=str(directory))
+    httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
+    httpd.allow_save = allow_save
+    return httpd
 
 
 def serve(args) -> int:
@@ -136,9 +220,12 @@ def serve(args) -> int:
         print(f"error: {root} is not a directory", file=sys.stderr)
         return 1
 
-    httpd = make_server(root, args.port)
+    httpd = make_server(root, args.port, allow_save=args.edit)
     port = httpd.server_address[1]
-    print(f"serving {root} at http://localhost:{port}/ (no-store; Ctrl+C to stop)")
+    mode = "no-store, saving enabled" if args.edit else "no-store"
+    print(f"serving {root} at http://localhost:{port}/ ({mode}; Ctrl+C to stop)")
+    if args.edit:
+        print("  edit mode: append &edit=1 to the viewer URL to save view and display settings")
     print(f"  e.g. http://localhost:{port}/index.html?bundle=<bundle-dir>")
     try:
         httpd.serve_forever()
@@ -165,12 +252,24 @@ def main(argv=None) -> int:
                    help="contrast-window the volume to this percentile range, e.g. "
                         "'0.5,99.5'; stretches the band the data actually occupies across "
                         "the full output range instead of min/max scaling")
+    b.add_argument("--colormap", choices=list_colormaps(), default=None,
+                   help="use a named colormap as the transfer function instead of the default "
+                        "gradient; the low end fades to transparent (see --colormap-alpha)")
+    b.add_argument("--colormap-alpha", type=_alpha_pair, default=(0.15, 0.5), metavar="LO,HI",
+                   help="where the colormap's alpha ramp starts and finishes, as fractions of "
+                        "the value range (default 0.15,0.5). Everything at or below LO is "
+                        "invisible; at or above HI is solid")
+    b.add_argument("--gamma", type=float, default=1.0,
+                   help="gamma applied to the value before the transfer function is looked up")
     b.add_argument("--size-warn-mb", type=float, default=100)
     b.add_argument("-o", "--output", required=True)
     b.set_defaults(func=build)
     s_ = sub.add_parser("serve", help="serve a directory over HTTP with caching disabled")
     s_.add_argument("directory", help="directory to serve (usually build/web)")
     s_.add_argument("--port", type=int, default=8060)
+    s_.add_argument("--edit", action="store_true",
+                    help="allow the viewer to save view and display settings back into a "
+                         "bundle's manifest.json (local authoring; off by default)")
     s_.set_defaults(func=serve)
     i = sub.add_parser("inspect", help="validate and describe a bundle")
     i.add_argument("bundle")

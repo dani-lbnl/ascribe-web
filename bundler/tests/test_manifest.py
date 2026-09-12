@@ -26,3 +26,23 @@ def test_validate_rejects_story_referencing_unknown_specimen():
     m = make_manifest("t", [_specimen()], [{"text": "x", "specimen": "nope"}])
     with pytest.raises(ValueError, match="unknown specimen"):
         validate_manifest(m)
+
+
+def test_view_accepts_a_pose_string():
+    from ascribe_bundle.manifest import DEFAULT_GRADIENT, make_manifest, validate_manifest
+    specimen = {"id": "s", "type": "volume", "data": "s.bin",
+                "display": {"gamma": 1.0, "opacity": 1.0, "gradient": DEFAULT_GRADIENT}}
+    m = make_manifest("t", [specimen], [])
+    m["view"] = "2.9267,-0.4002,0.5811"
+    validate_manifest(m)
+
+
+def test_view_rejects_a_malformed_pose():
+    import pytest
+    from ascribe_bundle.manifest import DEFAULT_GRADIENT, make_manifest, validate_manifest
+    specimen = {"id": "s", "type": "volume", "data": "s.bin",
+                "display": {"gamma": 1.0, "opacity": 1.0, "gradient": DEFAULT_GRADIENT}}
+    m = make_manifest("t", [specimen], [])
+    m["view"] = "not a pose"
+    with pytest.raises(ValueError):
+        validate_manifest(m)

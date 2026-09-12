@@ -197,3 +197,156 @@ def test_gen_cube_is_uniform_inside_and_oblique(tmp_path):
         counts = filled.sum(axis=tuple(i for i in range(3) if i != axis))
         occupied = counts[counts > 0]
         assert occupied.min() < occupied.max() * 0.9
+
+
+def test_colormap_flag_writes_the_colormap_gradient(tmp_path):
+    import numpy as np
+    from ascribe_bundle.cli import main
+
+    src = tmp_path / "v.npy"
+    np.save(src, np.linspace(0, 1, 512, dtype=np.float32).reshape(8, 8, 8))
+    out = tmp_path / "out"
+    assert main(["build", str(src), "--colormap", "viridis", "-o", str(out)]) == 0
+
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    gradient = manifest["specimens"][0]["display"]["gradient"]
+    assert len(gradient) > 4
+    # First stop transparent, and not black -- see colormaps.gradient_stops.
+    assert gradient[0][1].endswith("00")
+    assert gradient[0][1][:7] != "#000000"
+    assert gradient[-1][1].endswith("ff")
+
+
+def test_colormap_alpha_bounds_are_applied(tmp_path):
+    import numpy as np
+    from ascribe_bundle.cli import main
+
+    src = tmp_path / "v.npy"
+    np.save(src, np.linspace(0, 1, 512, dtype=np.float32).reshape(8, 8, 8))
+    out = tmp_path / "out"
+    assert main(["build", str(src), "--colormap", "magma",
+                 "--colormap-alpha", "0.4,0.8", "-o", str(out)]) == 0
+
+    gradient = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+    stops = gradient["specimens"][0]["display"]["gradient"]
+    for offset, hexcode in stops:
+        alpha = int(hexcode[7:9], 16)
+        if offset <= 0.4:
+            assert alpha == 0
+        if offset >= 0.8:
+            assert alpha == 255
+
+
+def test_bad_colormap_alpha_is_rejected(tmp_path):
+    import numpy as np
+    import pytest
+    from ascribe_bundle.cli import main
+
+    src = tmp_path / "v.npy"
+    np.save(src, np.zeros((4, 4, 4), dtype=np.float32))
+    with pytest.raises(SystemExit):
+        main(["build", str(src), "--colormap", "viridis",
+              "--colormap-alpha", "0.9,0.1", "-o", str(tmp_path / "o")])
+
+
+def _start(directory, allow_save):
+    import threading
+    from ascribe_bundle.cli import make_server
+
+    httpd = make_server(directory, port=0, allow_save=allow_save)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return httpd
+
+
+def _post(port, path, payload):
+    import urllib.error
+    import urllib.request
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}{path}", data=json.dumps(payload).encode("utf-8"),
+        method="POST", headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return resp.status, resp.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+
+
+def _bundle(tmp_path):
+    from ascribe_bundle.manifest import DEFAULT_GRADIENT, make_manifest
+    d = tmp_path / "b"
+    d.mkdir()
+    specimen = {"id": "specimen_0", "type": "volume", "data": "specimen_0.bin",
+                "display": {"gamma": 1.0, "opacity": 1.0, "gradient": DEFAULT_GRADIENT}}
+    manifest = make_manifest("t", [specimen], [])
+    (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return d, manifest
+
+
+def test_save_writes_the_manifest_when_editing_is_enabled(tmp_path):
+    d, manifest = _bundle(tmp_path)
+    httpd = _start(tmp_path, allow_save=True)
+    try:
+        manifest["view"] = "1.0,0.5,2.0"
+        manifest["specimens"][0]["display"]["gamma"] = 2.5
+        status, _ = _post(httpd.server_address[1], "/b/manifest.json", manifest)
+        assert status == 200
+
+        written = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
+        assert written["view"] == "1.0,0.5,2.0"
+        assert written["specimens"][0]["display"]["gamma"] == 2.5
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_save_is_refused_unless_explicitly_enabled(tmp_path):
+    d, manifest = _bundle(tmp_path)
+    httpd = _start(tmp_path, allow_save=False)
+    try:
+        status, _ = _post(httpd.server_address[1], "/b/manifest.json", manifest)
+        assert status == 403
+        # ...and the file on disk is untouched.
+        assert "view" not in json.loads((d / "manifest.json").read_text(encoding="utf-8"))
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_save_rejects_an_invalid_manifest(tmp_path):
+    d, manifest = _bundle(tmp_path)
+    httpd = _start(tmp_path, allow_save=True)
+    try:
+        broken = dict(manifest)
+        broken["specimens"] = [{"id": "x"}]        # missing required keys
+        status, body = _post(httpd.server_address[1], "/b/manifest.json", broken)
+        assert status == 400
+        assert b"invalid" in body.lower()
+        # The existing bundle must survive a bad save.
+        assert json.loads((d / "manifest.json").read_text(encoding="utf-8"))["specimens"][0]["id"]
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_save_only_accepts_manifest_paths(tmp_path):
+    _bundle(tmp_path)
+    httpd = _start(tmp_path, allow_save=True)
+    try:
+        status, _ = _post(httpd.server_address[1], "/b/specimen_0.bin", {"x": 1})
+        assert status == 404
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_save_refuses_to_escape_the_served_directory(tmp_path):
+    _bundle(tmp_path)
+    outside = tmp_path.parent / "outside.json"
+    httpd = _start(tmp_path, allow_save=True)
+    try:
+        status, _ = _post(httpd.server_address[1], "/../outside/manifest.json", {"version": 1})
+        assert status in (400, 403, 404)
+        assert not outside.exists()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()

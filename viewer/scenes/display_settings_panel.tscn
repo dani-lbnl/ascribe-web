@@ -52,3 +52,7 @@ value = 128.0
 [node name="ExitVR" type="Button" parent="VBox"]
 layout_mode = 2
 text = "Exit VR"
+
+[node name="Save" type="Button" parent="VBox"]
+layout_mode = 2
+text = "Save view + settings"

@@ -8,11 +8,16 @@ signal display_changed(display: Dictionary)
 ## Emitted when the panel's Exit VR button is pressed. The desktop copy of this panel hides the
 ## button (there is nothing to exit), so only the in-VR instance ever emits it.
 signal exit_vr_requested
+## Emitted by the Save button in edit mode. Only shown when the viewer is being served locally
+## with saving enabled, so a deployed bundle never offers an action that cannot work.
+signal save_requested
 
-const MIN_STEPS := 32
-# Above the desktop tier (512) so the slider always has headroom -- a default that sits at the
-# slider's ceiling reads as "raising quality does nothing".
-const MAX_STEPS := 1024
+# The slider spans only the usable range. Below ~512 steps the render is not worth looking at,
+# so the bottom of the travel is the lowest setting anyone would ship rather than a value that
+# makes the viewer look broken. The top leaves headroom above the desktop tier (1024), since a
+# default sitting at the ceiling reads as "raising quality does nothing".
+const MIN_STEPS := Quality.MIN_USABLE_STEPS
+const MAX_STEPS := Quality.MAX_STEPS
 
 
 func _ready() -> void:
@@ -28,10 +33,14 @@ func _ready() -> void:
 
 	$VBox/Quality.min_value = MIN_STEPS
 	$VBox/Quality.max_value = MAX_STEPS
-	$VBox/Quality.value = 128
+	# Start at the desktop tier; _apply_quality_tier overwrites this with the real tier once a
+	# specimen is staged, but the panel must never show a value outside the slider's travel.
+	$VBox/Quality.value = Quality.DESKTOP_STEPS
 	$VBox/Quality.value_changed.connect(func(_v): _emit_changed())
 
 	$VBox/ExitVR.pressed.connect(func(): exit_vr_requested.emit())
+	$VBox/Save.pressed.connect(func(): save_requested.emit())
+	$VBox/Save.visible = false
 	# Shown only in VR; set_exit_vr_visible() turns it on for the in-headset instance.
 	$VBox/ExitVR.visible = false
 
@@ -67,3 +76,12 @@ func set_display(display: Dictionary) -> void:
 ## in-VR panel needs its own way out; the desktop panel keeps it hidden.
 func set_exit_vr_visible(shown: bool) -> void:
 	$VBox/ExitVR.visible = shown
+
+
+## Shows or hides the Save button, and reports the result of a save on it.
+func set_edit_enabled(enabled: bool) -> void:
+	$VBox/Save.visible = enabled
+
+
+func set_save_status(text: String) -> void:
+	$VBox/Save.text = text
