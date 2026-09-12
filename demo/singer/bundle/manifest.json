@@ -7,8 +7,8 @@
       "type": "volume",
       "data": "specimen_0.bin",
       "display": {
-        "gamma": 1.0,
-        "opacity": 1.0,
+        "gamma": 2.81,
+        "opacity": 0.33,
         "gradient": [
           [
             0.0,
@@ -87,7 +87,9 @@
             "#fde725ff"
           ]
         ],
-        "lateral_jitter": 4.0
+        "lateral_jitter": 4.0,
+        "max_steps": 2048,
+        "step_size": 0.000625
       }
     }
   ],
@@ -104,5 +106,6 @@
       "text": "## Why VR\n\nFilament connectivity is genuinely hard to judge from orthogonal slices \u2014 the eye has to\nintegrate across hundreds of 2D planes. Stereo viewing with head-coupled parallax makes\n\"does this branch connect?\" a one-second question instead of a ten-minute one. That is\nthe whole argument for ascribe-web.",
       "specimen": "specimen_0"
     }
-  ]
+  ],
+  "view": "-1.4131,0.6629,1.0399"
 }

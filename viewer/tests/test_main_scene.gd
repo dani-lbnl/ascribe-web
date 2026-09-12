@@ -92,3 +92,27 @@ func test_edit_mode_is_off_by_default() -> void:
 	var save_button: Button = main.get_node(
 		"CanvasLayer/DisplaySettingsPanel/VBox/Save")
 	assert_bool(save_button.visible).is_false()
+
+
+# A bundle that specifies a quality meant it -- edit mode saves exactly that -- so the automatic
+# tier must not quietly overwrite it on load.
+func test_authored_quality_survives_the_startup_tier() -> void:
+	var main := await _make_main()
+	main._authored_quality = {"max_steps": 2048, "step_size": Quality.step_size_for(2048)}
+	main._apply_quality_tier()
+
+	var panel: DisplaySettingsPanel = main.get_node("CanvasLayer/DisplaySettingsPanel")
+	assert_that(panel.get_display()["max_steps"]).is_equal(2048)
+
+
+# ...but it must never push a headset above what its tier can afford: rendering slowly on a
+# desktop is a nuisance, dropping frames in VR is not.
+func test_authored_quality_is_capped_in_xr() -> void:
+	var main := await _make_main()
+	main._authored_quality = {"max_steps": 2048, "step_size": Quality.step_size_for(2048)}
+	main.get_viewport().use_xr = true
+	main._apply_quality_tier()
+	main.get_viewport().use_xr = false
+
+	var panel: DisplaySettingsPanel = main.get_node("CanvasLayer/DisplaySettingsPanel")
+	assert_that(panel.get_display()["max_steps"]).is_equal(Quality.XR_STEPS)

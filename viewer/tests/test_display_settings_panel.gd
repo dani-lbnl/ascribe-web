@@ -46,3 +46,19 @@ func test_set_display_moves_sliders_without_emitting() -> void:
 	assert_float(display["opacity"]).is_equal_approx(0.4, 0.001)
 	assert_that(display["max_steps"]).is_equal(768)
 	assert_that(seen).is_empty()
+
+
+# A "Saved" label must not linger over settings that have since been edited.
+func test_changing_a_slider_restores_the_save_label() -> void:
+	var panel := _make_panel()
+	panel.set_save_status("Saved")
+
+	panel.get_node("VBox/Gamma").value = 2.0
+
+	assert_str(panel.get_node("VBox/Save").text).is_equal(DisplaySettingsPanel.SAVE_TEXT)
+
+
+func test_save_label_survives_until_something_changes() -> void:
+	var panel := _make_panel()
+	panel.set_save_status("Saved")
+	assert_str(panel.get_node("VBox/Save").text).is_equal("Saved")

@@ -16,6 +16,10 @@ signal save_requested
 # so the bottom of the travel is the lowest setting anyone would ship rather than a value that
 # makes the viewer look broken. The top leaves headroom above the desktop tier (1024), since a
 # default sitting at the ceiling reads as "raising quality does nothing".
+## The Save button's resting label. After a save it reports the outcome instead, until
+## something changes -- a stale "Saved" sitting over edited settings is a lie.
+const SAVE_TEXT := "Save view + settings"
+
 const MIN_STEPS := Quality.MIN_USABLE_STEPS
 const MAX_STEPS := Quality.MAX_STEPS
 
@@ -46,7 +50,15 @@ func _ready() -> void:
 
 
 func _emit_changed() -> void:
+	clear_save_status()
 	display_changed.emit(get_display())
+
+
+## Puts the Save button back to its resting label, so it never claims settings are saved when
+## they have since been changed.
+func clear_save_status() -> void:
+	if $VBox/Save.text != SAVE_TEXT:
+		$VBox/Save.text = SAVE_TEXT
 
 
 ## Returns the current slider state as a display dictionary. `step_size` is derived from the

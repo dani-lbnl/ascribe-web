@@ -12,6 +12,15 @@ var _bundle_base_url: String = ""
 ## quality-tier application (startup, XR enter/exit) stops overriding their choice.
 var _user_touched_quality: bool = false
 
+## Camera pose as of the last save, so moving the view can mark the save stale the same way
+## moving a slider does.
+var _saved_pose: String = ""
+
+## Quality the loaded bundle asked for, if any. An author who set and saved a quality meant it,
+## so it wins over the automatic tier -- but never upward in XR, where exceeding the tier means
+## dropping frames in a headset rather than merely rendering slowly.
+var _authored_quality: Dictionary = {}
+
 const DEFAULT_BUNDLE := "res://tests/fixtures/tiny_bundle"
 
 
@@ -202,6 +211,12 @@ func _apply_quality_tier() -> void:
 		features.append("web_ios")
 	var xr_active := get_viewport().use_xr
 	var tier := Quality.pick_tier(features, xr_active)
+	if not _authored_quality.is_empty():
+		# Honour the bundle's own setting, capped by what this device can afford.
+		var steps: int = int(_authored_quality["max_steps"])
+		if xr_active:
+			steps = mini(steps, int(tier["max_steps"]))
+		tier = {"max_steps": steps, "step_size": Quality.step_size_for(steps)}
 	$SpecimenStage.apply_display(tier)
 	$CanvasLayer/DisplaySettingsPanel.set_display(tier)
 	$XROrigin3D/PanelViewport/DisplaySettingsPanel.set_display(tier)
@@ -212,6 +227,8 @@ func _apply_quality_tier() -> void:
 ## rather than cached: IPD can change between sessions, and some runtimes only report a
 ## meaningful value once tracking has settled.
 func _process(_delta: float) -> void:
+	_refresh_save_status()
+
 	if xr_interface == null or not get_viewport().use_xr:
 		return
 	var origin: XROrigin3D = $XROrigin3D
@@ -277,11 +294,22 @@ func _save_bundle_settings() -> void:
 	var code: int = result[1]
 	if code == 200:
 		_manifest = updated
+		_saved_pose = str(updated.get("view", ""))
 		panel.set_save_status("Saved")
 	elif code == 403:
 		panel.set_save_status("Saving disabled -- serve with --edit")
 	else:
 		panel.set_save_status("Save failed (HTTP %d)" % [code])
+
+
+## Clears a "Saved" label once the camera has moved away from what was saved. Slider changes
+## clear it themselves; the camera is not the panel's to watch.
+func _refresh_save_status() -> void:
+	if _saved_pose == "":
+		return
+	if ($Camera3D as OrbitCamera).pose_string() != _saved_pose:
+		_saved_pose = ""
+		$CanvasLayer/DisplaySettingsPanel.clear_save_status()
 
 
 ## Resolves the bundle base URL: `--bundle=<path-or-url>` after `--` on desktop, else the
@@ -348,6 +376,12 @@ func _on_loaded(manifest: Dictionary, specimens: Dictionary) -> void:
 		return
 
 	var spec_display: Dictionary = first_spec.get("display", {})
+	if spec_display.has("max_steps"):
+		_authored_quality = {
+			"max_steps": int(spec_display["max_steps"]),
+			"step_size": float(spec_display.get(
+				"step_size", Quality.step_size_for(int(spec_display["max_steps"])))),
+		}
 	$SpecimenStage.stage(spec_id, data, spec_display)
 	# Show the bundle's own gamma/opacity on the panels. Without this the sliders sit at their
 	# defaults while the render uses the manifest's values -- the panel lies about the current
