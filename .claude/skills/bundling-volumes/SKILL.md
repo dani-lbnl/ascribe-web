@@ -29,9 +29,18 @@ Flag order of importance for real reconstructions:
 
 ## Transfer function
 
-The gradient is **not** settable from the CLI yet — edit `display.gradient` in the baked
-`manifest.json` (a list of `[offset, "#rrggbbaa"]` stops) and `display.gamma`. A rebake
-overwrites it, so keep the edit in a script if you are iterating.
+Three ways to set it, in order of preference:
+
+- `ascribe-bundle build --colormap viridis --colormap-alpha 0.15,0.5` at bake time. Available:
+  viridis, magma, inferno, plasma, cividis, turbo, jet, mako, rocket, flare, crest, icefire, gray.
+- **Edit mode** (below) — pose the specimen and move the sliders, then save.
+- `python demo/apply_display.py <manifest.json> --colormap ... | --preset ...` to re-apply after
+  a rebake, which otherwise overwrites `display` with the default gradient.
+
+Whatever you do, **the transparent low end must carry a real colour, not black.** The viewer
+interpolates the gradient in straight alpha, so a `#00000000` stop drags the colour of every
+sample blending toward it — dark fringing wherever material fades in. `colormaps.py` pads with
+the colormap's own lowest colour for exactly this reason.
 
 **Do not couple colour to the steep part of the alpha ramp.** Front-to-back compositing weights
 the first sample with meaningful alpha by `(1 - 0)`, so that one sample effectively picks the
@@ -51,6 +60,18 @@ It is the single biggest lever on how a volume reads, and easy to overdo:
   banding energy was once just the image turning into a brown rectangle.
 - `display.max_steps`/`step_size` in the manifest are overridden at startup by the automatic
   quality tier (`viewer/scripts/quality.gd`), so setting them there has no effect.
+
+## Edit mode (authoring a bundle's presentation)
+
+```powershell
+ascribe-bundle serve build\web --edit
+```
+
+Open `...?bundle=<dir>&edit=1`, frame the specimen, set the sliders, press **Save view +
+settings**. The viewer POSTs the manifest back to the server, which validates and rewrites it;
+the gradient, story and specimen ids pass through untouched. A saved `view` becomes the bundle's
+default framing (an explicit `?view=` still wins). Both halves are opt-in, so a deployed bundle
+never offers a button that cannot work.
 
 ## Preview
 
@@ -123,6 +144,13 @@ along-ray jitter cannot -- but it converts structure into grain rather than remo
 error at source: at maximum gamma/opacity the residual goes from 2.148 to 0.930 and the fine
 grain from 1.840 to 0.463, with no dither at all. `lateral_jitter` remains available per-bundle
 for content where the sub-stepping cannot keep up.
+
+**Quality and dithering interact, which is confusing if you meet them separately.** With
+`lateral_jitter` off the quality slider does almost nothing -- sub-step integration makes the
+render step-invariant, which was the point (512 vs 2048 steps differ by 0.2 of 255 on the ALS
+bundle). With dithering on, quality matters a lot, because more steps means less per-ray error to
+scatter: grain 10.7 / 7.0 / 4.3 at 128 / 512 / 2048 steps. So dithering is what creates the need
+for a high quality setting, and that cost lands on XR framerate.
 
 Diagnostic uniforms: `manual_filter` replaces the hardware sampler with a
 float32 trilinear blend (8 texelFetches), and `jitter_amount` scales the per-ray start jitter

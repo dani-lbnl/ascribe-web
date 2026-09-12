@@ -81,14 +81,15 @@ jobs:
           set -euo pipefail
           cp -r demo/bundle build/web/demo_bundle
           cp -r demo/singer/bundle build/web/singer_bundle
+          # The demo ships the lateral dither; this twin has it off, since the dither is what
+          # makes the quality setting matter and that cost lands on headset framerate.
+          cp -r demo/singer/bundle build/web/singer_nodither
+          python demo/apply_display.py build/web/singer_nodither/manifest.json             --colormap viridis --gamma 1.0
           # Same volume, different transfer functions, for comparing how much of the banding is
           # colour-from-first-hit. No extra data in the repo: these are copies of one bundle.
           cp -r demo/singer/bundle build/web/singer_early
           python demo/apply_display.py build/web/singer_early/manifest.json --preset early-colour
           # Same volume with the lateral dither on, to compare coherent moire against grain.
-          # A colormapped variant, to show what the named colormaps look like on real data.
-          cp -r demo/singer/bundle build/web/singer_viridis
-          python demo/apply_display.py build/web/singer_viridis/manifest.json --colormap viridis
           cp -r demo/singer/bundle build/web/singer_dither
           python demo/apply_display.py build/web/singer_dither/manifest.json --lateral-jitter 4
           cp -r build/web/cube build/web/cube_dither
