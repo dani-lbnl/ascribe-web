@@ -55,6 +55,9 @@ ascribe-bundle build data.npy --story story.md --title "My Data" -o out/
   rather than black, since the gradient is interpolated in straight alpha and a black stop drags
   everything blending toward it. `--colormap-alpha LO,HI` (default `0.15,0.5`) sets where that
   fade starts and finishes.
+- `--gamma G` applies a gamma to the value before the transfer function is looked up. Below 1
+  lifts faint material, above 1 suppresses it; the viewer's Gamma slider does the same thing
+  live, so this is really just a saved starting point.
 - `--window LOW,HIGH` contrast-windows the volume to that percentile range before casting. Real
   reconstructions often pack 90%+ of their voxels into a narrow intensity band with a few far-out
   outliers; plain min/max scaling then leaves the structure with almost no contrast (it renders as
@@ -126,16 +129,28 @@ reconstruction with:
 ```powershell
 ascribe-bundle build rec20201028_190153_esther-singer_wet2_pipette_z50_YESagar_x00y01_8bitcrop-roi.tif `
   --story demo/singer/story.md --title "Agar column microtomography (ALS 8.3.2)" `
-  --dtype u8 --max-dim 384 --smooth 1.5 --window 1,99.8 -o demo/singer/bundle
+  --dtype u8 --max-dim 384 --smooth 0.6 --window 1,99.8 -o demo/singer/bundle
 ```
 
-Its `manifest.json` `display.gradient` was then hand-tuned to keep the bulk agar transparent and
-let the dense structure carry the image -- the CLI has no `--gradient` flag yet, so transfer
-functions are edited in the manifest after baking.
+Its presentation -- viridis, the framing, gamma/opacity/quality -- was then set in the viewer's
+edit mode and saved back into the manifest, which is the intended way to do it (see below).
+`demo/apply_display.py` re-applies a colormap or preset after a rebake, since `ascribe-bundle
+build` always rewrites `display`.
 
 This repo also ships a synthetic demo bundle at `build/web/demo_bundle/` (also kept at `demo/bundle/` alongside
 the numpy generator that produced it, `demo/gen_demo_volume.py`, and its story, `demo/story.md`) --
 load it with `?bundle=demo_bundle` against the exported build.
+
+## Controls
+
+Desktop: left-drag orbits, right-drag pans, wheel zooms. On a touchscreen, one finger orbits and
+two fingers pinch to zoom and drag to pan (Godot synthesises neither gesture on web, so these are
+resolved from raw touch events). **V** prints a shareable `?view=` URL to the browser console.
+
+In VR: holding one grip moves and rotates the specimen; holding both grips scales it by the
+change in distance between your hands (clamped to 0.1x-10x). The settings and story panels float
+beside it, and the settings panel carries an **Exit VR** button -- a headset has no browser chrome to fall
+back on, and the system gesture is not obvious to a first-time user.
 
 ## Rebuilding the viewer
 
@@ -181,6 +196,21 @@ bundle's default framing, which an explicit `?view=` still overrides.
 Saving is refused unless `--edit` was passed, and the button is hidden without `&edit=1`, so a
 deployed bundle never offers an action that cannot work.
 
+## What a bundle can specify
+
+Everything under a specimen's `display` in `manifest.json`, all optional:
+
+| key | meaning |
+|---|---|
+| `gradient` | transfer function: `[[offset, "#rrggbbaa"], ...]`. Keep transparent stops coloured, not black -- the viewer interpolates in straight alpha, so a black stop drags the colour of anything fading in |
+| `gamma` | applied to the value before the gradient lookup |
+| `opacity` | scales every sample's alpha |
+| `max_steps`, `step_size` | ray sampling. An authored value wins over the automatic quality tier, except in a headset, where it is capped by the XR tier so a bundle cannot cost someone their framerate |
+| `lateral_jitter` | screen-plane dither, in march steps (default 4). Breaks up the coherent moire that neighbouring rays otherwise produce, at the cost of grain. Set 0 to disable |
+| `lut_substeps` | transfer-function sub-step budget (default 192). Lower it if a headset cannot hold framerate |
+
+Plus a top-level `view` (`"yaw,pitch,distance"`), the bundle's default framing.
+
 ## Comparing shader changes
 
 Volume rendering regressions are hard to judge by eye. `viewer/tools/shader_probe.gd` renders a
@@ -191,6 +221,12 @@ fixed close-up of a bundle so two variants can be measured rather than eyeballed
     -s res://tools/shader_probe.gd -- --bundle=http://localhost:8060/singer_bundle `
     --param=max_steps:512 --param=step_size:0.0025
 ```
+
+Note that quality and dithering interact: with `lateral_jitter` at 0 the quality setting does
+almost nothing (sub-step integration makes the render step-invariant -- 512 and 2048 steps differ
+by 0.2 of 255 on the ALS bundle), while with dithering on, more steps means less per-ray error to
+scatter and the difference is obvious. `?bundle=singer_nodither` is the demo with it off, for
+comparison.
 
 The viewer also draws a small axes gadget in the bottom-left corner showing how world X/Y/Z
 currently sit relative to the camera, which makes it much easier to say *which* plane an
